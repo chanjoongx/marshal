@@ -9,7 +9,7 @@
 // must match. Node ESM, no dependencies. Run: `node scripts/curve_check.mjs`.
 
 const INLET = 30; // cold-aisle / coolant inlet reference (C)
-const THROTTLE = 84; // GPU junction thermal-throttle onset (C)
+const THROTTLE = 84; // GPU throttle onset (C); H100 throttles in the low-to-mid 80s
 const TAU = 220; // thermal time constant (s) under test
 const HORIZON = 300; // 5-minute projection horizon (s)
 const DREF = THROTTLE - INLET; // reference delta-T that defines cooling_capacity_w (54)

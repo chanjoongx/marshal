@@ -484,13 +484,23 @@ export class CrusoeProvider implements Provider {
     return stripThink(content).trim();
   }
 
-  async interpretConstraint(text: string): Promise<InterpretedConstraint | null> {
+  async interpretConstraint(text: string, snapshot: Snapshot): Promise<InterpretedConstraint | null> {
+    // Give the model the rack and job list so it can resolve a description ("the rack running the
+    // checkpoint writer") to a real id. That resolution is the step a regex cannot do.
+    const racks = snapshot.racks
+      .map((r) => {
+        const jobs = r.active_jobs.map((j) => j.id).join(", ") || "idle";
+        const tag = r.id === snapshot.focus_rack_id ? ", the at-risk marginal-cooling rack" : "";
+        return `  ${r.id} (row ${r.row}, ${round(r.gpu_temp_c)}C, headroom ${Math.round(r.headroom_w)}W${tag}): ${jobs}`;
+      })
+      .join("\n");
+    const user = `Operator note: ${text}\n\nRacks and their jobs (resolve any description to one of these ids):\n${racks}`;
     try {
       const content = await this.call({
         model: this.modelAdvisory,
         messages: [
           { role: "system", content: CONSTRAINT_SYSTEM },
-          { role: "user", content: text },
+          { role: "user", content: user },
         ],
         temperature: 0.2,
         top_p: 0.95,
@@ -563,6 +573,7 @@ export const CONSTRAINT_SYSTEM = `You convert a shift engineer's free-text note 
 - exclude_rack: a specific rack must not receive migrations. target = the rack id, like "B3" or "B12".
 - avoid_row: a whole aisle or row should be avoided. target = the row letter, like "A" or "B".
 - pin_job: a specific job must not be moved off its rack. target = the job id, like "job-4471".
+The note may name a rack or job by description instead of by id (for example "the rack running the checkpoint writer", "the marginal-cooling rack", "the gradient partner"). Use the rack and job list in the user message to resolve the description to the correct id. target must be an id that appears in that list.
 Pick the single best-fitting kind. target is only the identifier, no extra words. reason is a short phrase. Return ONLY the JSON.`;
 
 export const CLASSIFY_SYSTEM = `You triage GPU rack thermal risk. For each rack in the snapshot, classify risk as "nominal", "elevated", or "at_risk" based on its projected temperature and headroom. Output ONLY minified JSON: {"classifications":[{"rack_id":string,"risk":"nominal|elevated|at_risk"}]}. No prose.`;

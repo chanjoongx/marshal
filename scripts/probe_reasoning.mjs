@@ -35,6 +35,7 @@ Rules:
 - Output ONLY minified JSON: {"severity":"watch|warn|critical","area":string,"headline":string(<=90 chars),"rationale":string(2 sentences, cite >=2 numbers),"action":{"type":"migrate_job|cap_intake|rebalance_row|hold|no_action","params":{"job_id"?:string,"from_rack"?:string,"to_rack"?:string,"cap_w"?:number,"shed_job"?:string,"row"?:string},"one_line":string(<=90 chars)},"alternatives":[up to 2 action objects],"confidence":number 0..1,"learned_from":string|null}
 - The action MUST satisfy every active constraint. Never target an excluded rack.
 - CO-LOCATION: if a job has a co-location dependency (must run with another job for gradient/data exchange), migrate it to the rack HOSTING that dependency, even if another rack has more headroom. Breaking co-location severely degrades the job. Do not pick a rack just because it has the most headroom.
+- Thermal throttling is driven by COOLING: headroom_w is the cooling headroom (negative means over cooling capacity, heading to throttle). Cite the cooling headroom for thermal risk, never the power budget (a separate electrical ceiling).
 - POWER BUDGET: a migrate target must stay within its power budget (draw_w + job power <= budget_w). If the right rack is over budget for the job, shed one of its low-priority jobs (set params.shed_job) to make room rather than picking a worse rack.
 - Terse operations English. No exclamation marks.`;
 
@@ -45,11 +46,12 @@ const SNAP = `SNAPSHOT t=140s
 CLUSTER: batch surge on B-row, B7 over cooling capacity
 FOCUS: B7   TRIGGER: band_cross
 RACKS:
+  headroom_w = cooling capacity minus draw (negative = over cooling capacity); budget_w = separate electrical ceiling
   id   temp  proj5m  ttt    headroom_w  band     util%  draw_w  budget_w  jobs
-  B7   68.7  84.5    279s   -630        nominal  95     6300    12000     job-4471(high,700W,co_located_with=job-4470); batch-1(low,560W); batch-2(low,560W)
-  B3   61.0  61.5    -      +2600       watch    64     8900    12000     job-4470(high,900W); ckpt-9(low,800W); svc-3(normal,700W)
-  B5   58.0  58.2    -      +2900       nominal  60     8600    12000     job-5500(normal,900W); svc-5(normal,800W)
-  B15  48.0  48.1    -      +5400       nominal  36     2700    12000     svc-3300(normal,900W)
+  B7   68.7  84.5    279s   -1260       nominal  111    12600   24000     job-4471(high,1400W,co_located_with=job-4470); batch-1(low,1120W); batch-2(low,1120W)
+  B3   61.0  61.5    -      +5200       watch    77     17800   24000     job-4470(high,1800W); ckpt-9(low,1600W); svc-3(normal,1400W)
+  B5   58.0  58.2    -      +5800       nominal  75     17200   24000     job-5500(normal,1800W); svc-5(normal,1600W)
+  B15  48.0  48.1    -      +10800      nominal  33     5400    24000     svc-3300(normal,1800W)
 DEPENDENCIES:
   - job-4471 is co-located with job-4470 (gradient exchange); job-4470 currently runs on B3.
 QUEUE: pending=[]; recent=[job-4471->B7@120s]

@@ -32,20 +32,20 @@ Anchored on a real accelerator so the numbers survive a Crusoe engineer's scruti
 
 ## 2. Thermal model (first-order lumped capacitance)
 
-A rack's package temperature (`gpu_temp_c`, governed by the heatsink and coolant thermal
-mass, not an instantaneous silicon die junction) is modeled as a first-order thermal system.
-This is the standard lumped-capacitance model (Newton's law of cooling): temperature moves
-toward a load-dependent steady state with a time constant (~220 s here), so it has visible
-multi-minute inertia and rises and falls smoothly rather than instantly. That inertia is
-exactly what makes a 5-minute prediction physically legitimate rather than a straight-line
-extrapolation gimmick; the throttle at 84 C is the moment this package temperature crosses,
-not an instantaneous die response.
+A rack's GPU thermal state (`gpu_temp_c`) is modeled as a first-order lumped-capacitance system
+(Newton's law of cooling): temperature moves toward a load-dependent steady state with a single
+time constant (~220 s here), so it has visible multi-minute inertia and rises and falls smoothly
+rather than instantly. This is deliberately a multi-minute abstraction. The ~220 s constant is the
+heatsink and coolant thermal mass that dominates the minutes-scale response, which is the only
+timescale a 5-minute forecast cares about; the model does not resolve the fast sub-second silicon
+die transient, which is irrelevant at a 5-minute horizon. That slow-mass inertia is exactly what
+makes a 5-minute prediction physically legitimate rather than a straight-line extrapolation
+gimmick. The throttle onset is 84 C, the temperature at which the H100 begins thermal throttling.
 
 Definitions (all in `src/shared/types.ts` `SIM`):
 
 - `INLET_TEMP_C = 30` cold-aisle / coolant inlet reference.
-- `THROTTLE_TEMP_C = 84` throttle onset for the rack package temperature (anchored on the
-  H100 junction-throttle spec in section 1).
+- `THROTTLE_TEMP_C = 84` GPU throttle onset (the H100 throttles in the low-to-mid 80s C, section 1).
 - `THERMAL_TAU_S = 220` time constant, tuned (section 6).
 - `PROJECTION_HORIZON_S = 300` the 5-minute lookahead.
 - `DREF = THROTTLE_TEMP_C - INLET_TEMP_C = 54` the reference delta-T that defines a rack's

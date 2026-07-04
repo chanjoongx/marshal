@@ -17,7 +17,7 @@ export const SIM = {
   GPUS_PER_RACK: 8,
   GPU_TDP_W: 700, // NVIDIA H100 SXM5 per-GPU TDP
   INLET_TEMP_C: 30, // cold-aisle / coolant inlet reference
-  THROTTLE_TEMP_C: 84, // GPU junction thermal-throttle onset
+  THROTTLE_TEMP_C: 84, // GPU throttle onset (H100 throttles in the low-to-mid 80s C)
   THERMAL_TAU_S: 220, // first-order thermal time constant, tuned via scripts/curve_check.mjs (see SIM_SPEC)
   RACK_POWER_BUDGET_W: 24000, // per-rack electrical ceiling (total rack power, all -> heat)
   PROJECTION_HORIZON_S: 300, // 5-minute predictive lookahead
@@ -59,9 +59,9 @@ export const RackSchema = z.object({
   gpus: z.number().int(),
   cooling_capacity_w: z.number(), // heat-removal conductance reference (see SIM_SPEC)
   power_budget_w: z.number(),
-  power_draw_w: z.number(), // current IT electrical draw, ~= heat input
+  power_draw_w: z.number(), // total rack electrical power (node + top-of-rack infra + conversion losses), ~= heat input
   utilization_pct: z.number(),
-  gpu_temp_c: z.number(), // current junction temp
+  gpu_temp_c: z.number(), // representative GPU temperature (lumped rack thermal state, heatsink + coolant dominated)
   inlet_temp_c: z.number(),
   active_jobs: z.array(JobSchema),
 });
