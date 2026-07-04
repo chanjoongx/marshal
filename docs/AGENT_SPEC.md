@@ -34,9 +34,9 @@ Debounce: do not issue a new advisory for a rack within `SIM.DEBOUNCE_S` (20) si
 its last advisory, UNLESS its severity escalates (warn -> critical) or an operator override
 just occurred for it. Override always forces an immediate re-solve.
 
-The heavy tier is also consulted, outside the tick trigger, on: an operator override
-(re-solve with the new constraint), a Why request, and optionally a one-line resolution
-summary.
+The heavy tier is also consulted, outside the tick trigger, on: an operator override (interpret
+the free-text note into a structured constraint, then re-solve with it), a Why request, and
+optionally a one-line resolution summary.
 
 ## 2. Snapshot to the heavy model
 
@@ -57,9 +57,9 @@ CLUSTER: <cluster_note>
 FOCUS: <focus_rack_id>   TRIGGER: <band_cross|override|why|resolution>
 RACKS:
   id   temp  proj5m  ttt    headroom_w  band     util%  draw_w  budget_w  jobs
-  B7   68.7  84.5    279s   -630        nominal  100    6300    12000     job-4471(high,700W,co_located_with=job-4470); batch-1(low,560W); batch-2(low,560W)
-  B3   63.3  63.3    -      3100        nominal  89     5000    12000     job-4470(high,900W); ckpt-9(low,800W); b3-svc(normal,3300W)
-  B15  48.0  48.0    -      5400        nominal  48     2700    12000     job-b15(normal,2700W)
+  B7   68.7  84.5    279s   -1260       nominal  111    12600   24000     job-4471(high,1400W,co_located_with=job-4470); batch-1(low,1120W); batch-2(low,1120W)
+  B3   63.3  63.3    -      6200        nominal  62     10000   24000     job-4470(high,1800W); ckpt-9(low,1600W); b3-svc(normal,6600W)
+  B15  48.0  48.0    -      10800       nominal  33     5400    24000     job-b15(normal,5400W)
 DEPENDENCIES:
   - job-4471 must co-locate with job-4470 (currently on B3)
 QUEUE: pending=[job-5540(low,560W)]; recent=[job-4471->B7@120s]
@@ -70,8 +70,8 @@ Two things the format now carries. Each job prints its `co_located_with` partner
 has one, and a `budget_w` column gives the model the per-rack power ceiling it must stay under.
 A `DEPENDENCIES` block then names each co-located job and where its partner currently runs, so
 the co-location target is explicit rather than something the model has to infer from the job
-list. B3 above is in the snapshot only because it hosts `job-4470`: on headroom alone (3100 W,
-below B15's 5400 W) it would be cut, and then the model could not pick it. If there are no
+list. B3 above is in the snapshot only because it hosts `job-4470`: on headroom alone (6200 W,
+below B15's 10800 W) it would be cut, and then the model could not pick it. If there are no
 constraints, print `CONSTRAINTS: none`; the constraint and dependency blocks are the point, since
 they turn advice generation into constraint reconciliation. When an operator constraint is
 active it prints as a `CONSTRAINTS (operator-added, active - you MUST satisfy all):` block with
@@ -89,7 +89,7 @@ System prompt (byte-stable, do not vary between calls; the source of truth is
 `ADVISORY_SYSTEM` in `src/inference/inference.ts`, reproduced here verbatim):
 
 ```
-You are Marshal, a situational-awareness agent for a live GPU data center. You watch rack thermal telemetry and propose ONE executable action a non-technical shift engineer can approve, override, or question. You never do arithmetic: every number you need is given in the snapshot. Your job is to reconcile the operator's active constraints and each rack's physical limits (headroom_w and power budget) into a single feasible recommendation.
+You are Marshal, a situational-awareness agent for a live GPU data center. You watch rack thermal telemetry and propose ONE executable action a non-technical shift engineer can approve, override, or question. You never do arithmetic: every number you need is given in the snapshot. Your job is to reconcile the operator's active constraints and each rack's physical limits (the thermal cooling headroom_w and the separate electrical power budget) into a single feasible recommendation.
 
 Rules:
 - Output ONLY minified JSON matching this schema, no prose, no markdown:
@@ -98,6 +98,7 @@ Rules:
 - The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget (draw_w + job power <= budget_w).
 - CO-LOCATION: if the job has a co_located_with partner, migrate it to the rack HOSTING that partner, even if another rack has more headroom. Breaking co-location severely degrades the job, so never pick a rack just because it has the most headroom. If that rack is excluded by an operator constraint, pick the next-best feasible rack and say co-location could not be preserved.
 - If an operator-added constraint shaped your choice, set learned_from to that constraint id (e.g. "c1"). Otherwise null.
+- Thermal throttling is driven by COOLING, not the power budget: a rack heads to throttle when its draw exceeds its cooling capacity, i.e. headroom_w is negative. When you explain a thermal risk, cite the rack's cooling headroom (its draw versus its cooling capacity, e.g. "draw exceeds cooling capacity by N W"), never the power budget. The power budget is a separate electrical ceiling used only as a feasibility check on a migrate target.
 - When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a feasible target and cap the source rack intake to shed low-priority load. State both in one_line when both are needed.
 - Terse operations English. No exclamation marks.
 ```
@@ -174,33 +175,59 @@ when all of these hold: the model's action is a migrate of a job that has a co-l
 that partner's rack exists and is not excluded, and the naive pick both differs from the model's
 target and would break the co-location. In every other case it is left unset, so the contrast is
 honest and never manufactured. For the first B7 advisory it resolves to
-`{to_rack: "B15", one_line: "Migrate job-4471 to B15 (most headroom, 5400W)", flaw: "breaks
+`{to_rack: "B15", one_line: "Migrate job-4471 to B15 (most headroom, 10800W)", flaw: "breaks
 job-4471's co-location with job-4470 on B3"}`, which the card renders under "a headroom-only rule
 would". After the operator excludes B3, co-location is no longer achievable, so `rule_pick` is
 unset on the re-solve and on the second event.
 
 ## 5. Override feedback and learning (the centerpiece)
 
-An override is not a dismissal. It teaches the agent a durable rule.
+An override is not a dismissal. It teaches the agent a durable rule, and the operator gives it in
+plain language, not a form.
 
-1. The client sends `control/override` with a free-text `reason` and a structured
-   `constraint {kind, target, reason}` (protocol.ts). For the demo: `exclude_rack B3`,
-   reason "firmware update in 10 min".
-2. The server assigns the constraint an id, `ts = sim_time_s`, `source = "override"`, and adds
+1. The client sends `control/override` with the operator's free-text `text` note and the advisory
+   id (protocol.ts), nothing structured. For the demo the engineer types "B3 has a firmware update
+   in 10 min".
+2. The server has the heavy model interpret that note into ONE structured constraint
+   `{kind, target, reason}`, where `kind` is one of `exclude_rack`, `avoid_row`, or `pin_job` and
+   `target` is a rack id, a row letter, or a job id (`Provider.interpretConstraint`, thinking
+   disabled as in section 3, `max_tokens: 120`, `response_format: {type: "json_object"}`). System
+   prompt (byte-stable, `CONSTRAINT_SYSTEM` in `src/inference/inference.ts`, verbatim):
+
+   ```
+   You convert a shift engineer's free-text note into ONE structured operational constraint for a GPU data center scheduler. Return ONLY minified JSON: {"kind":"exclude_rack|avoid_row|pin_job","target":string,"reason":string}.
+   - exclude_rack: a specific rack must not receive migrations. target = the rack id, like "B3" or "B12".
+   - avoid_row: a whole aisle or row should be avoided. target = the row letter, like "A" or "B".
+   - pin_job: a specific job must not be moved off its rack. target = the job id, like "job-4471".
+   Pick the single best-fitting kind. target is only the identifier, no extra words. reason is a short phrase. Return ONLY the JSON.
+   ```
+3. Code then VALIDATES the interpreted target against the live world (`validateConstraint` in
+   `src/server/agent.ts`): the rack, row, or job it names must actually exist in the current
+   snapshot. If the model's parse does not validate (wrong kind, empty or unknown target), the
+   server falls back to a deterministic regex parse of the same note (`heuristicConstraint`, which
+   pulls a rack id, a row letter, or a job id out of the text); if that does not validate either,
+   no constraint is added. So a mis-parse can never invent a phantom rack. The offline
+   `MockProvider` uses that same regex heuristic as its `interpretConstraint`, so the smoke test
+   stays deterministic with no network.
+4. The server assigns the constraint an id, `ts = sim_time_s`, `source = "override"`, and adds
    it to `world.constraints`. From now on it is printed in EVERY snapshot (section 2).
-3. The overridden advisory's record is marked `outcome: "overridden"`, `operator_reason` set.
-4. The server immediately re-solves for the same focus rack with `trigger: "override"`. Excluding
+5. The overridden advisory's record is marked `outcome: "overridden"`, `operator_reason` set to
+   the raw note.
+6. The server immediately re-solves for the same focus rack with `trigger: "override"`. Excluding
    B3 makes the co-location unreachable, so the constraint changes the criterion: with the
    dependency gone, the emptiest feasible rack is now correct and the re-solve routes `job-4471`
    to B15. The new advisory MUST set `learned_from` to the new constraint's id, and the UI
-   renders a "learned: avoids B3" chip.
-5. Every LATER advisory that would have been shaped by that constraint also sets `learned_from`
+   renders a "learned: avoids rack B3" chip.
+7. Every LATER advisory that would have been shaped by that constraint also sets `learned_from`
    to it and avoids the excluded target without being told again (the second S1 event proves
    this: A5 spikes with its own co-location on B3, and the agent routes around B3 on its own).
 
-This closed loop, structured-constraint injection plus reconciliation plus the learned chip,
-is what makes "the operator can override in the moment and the agent learns" real rather than
-cosmetic.
+This closed loop, natural-language interpretation plus a code-validated structured constraint
+injected into every snapshot plus reconciliation plus the learned chip, is what makes "the operator
+can override in plain language in the moment and the agent learns" real rather than cosmetic. The
+model does the part code cannot, turning an open-ended sentence into a machine-readable rule; code
+does the part the model cannot be trusted with, checking that rule against the live world before it
+drives anything.
 
 ## 6. Why
 
@@ -216,8 +243,8 @@ new advice. Terse operations English, no exclamation marks.
 
 User message: the snapshot plus the advisory being questioned. Return the text via
 `server -> why` (protocol.ts). Example shape: "B7 is at 68.7 C and projected to reach 84.5 C
-within 5 minutes; time to throttle is 279 seconds. Its draw of 6300 W exceeds its 5670 W
-cooling capacity by 630 W, so without shedding load it will cross the throttle line."
+within 5 minutes; time to throttle is 279 seconds. Its draw of 12600 W exceeds its 11340 W
+cooling capacity by 1260 W, so without shedding load it will cross the throttle line."
 
 ## 7. Resolution
 
@@ -236,7 +263,7 @@ when justifying. Examples:
 - status: "Marshal watching 24 racks, cluster nominal, B-row utilization climbing"
 - warn headline: "B7 hits 84 C throttle in ~5 min, migrate job-4471 to its partner on B3"
 - action one_line: "Migrate job-4471 to B3 to join job-4470, cap B7 intake"
-- learned chip: "learned: avoids B3 (firmware update in 10 min)"
+- learned chip: "learned: avoids rack B3 (firmware update in 10 min)"
 
 ## 9. Offline build
 

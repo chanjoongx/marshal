@@ -15,21 +15,22 @@ the throttle line, and issues an advisory. The twist is where it moves the job: 
 high-priority job must stay co-located with its gradient partner on another rack, so Marshal sends
 it there rather than to the emptiest rack, and the card shows side by side that a headroom-only
 rule would have grabbed the emptiest rack and broken the dependency. The engineer can ask "why"
-and get the numbers, or override with a real-world constraint the telemetry cannot know ("that
-rack has a firmware update in ten minutes"). Marshal reconciles the constraint, re-solves in
-seconds, the forecast bends away from the throttle line on approve, and it remembers the rule for
-every later decision.
+and get the numbers, or override in plain language with a real-world constraint the telemetry
+cannot know ("that rack has a firmware update in ten minutes"). Marshal interprets that note into a
+structured constraint, reconciles it, re-solves in seconds, the forecast bends away from the
+throttle line on approve, and it remembers the rule for every later decision.
 
 ## Real vs simulated
 
 Honesty matters for judging, so the boundary is explicit and shown in the UI.
 
 - Real: the agent loop, Crusoe Managed Inference on NVIDIA Nemotron-3-Ultra-550B, the
-  constraint reconciliation (including a job's co-location dependency), the live temperature
-  forecast the agent draws, the override-to-learning loop, and the action-feasibility validation
-  that rejects an infeasible migration before it reaches the engineer. The advisory card also
-  shows, side by side, what a headroom-only rule would have done, so the model's advantage is
-  demonstrated rather than claimed.
+  constraint reconciliation (including a job's co-location dependency), the model turning a
+  plain-language operator override note into a structured constraint (code validates the target
+  against the live world), the live temperature forecast the agent draws, the override-to-learning
+  loop, and the action-feasibility validation that rejects an infeasible migration before it
+  reaches the engineer. The advisory card also shows, side by side, what a headroom-only rule
+  would have done, so the model's advantage is demonstrated rather than claimed.
 - Simulated: the rack telemetry and the cluster. A first-order thermal model (cited GPU specs,
   see docs/SIM_SPEC.md) gives temperatures real physical inertia, which is what makes a
   5-minute prediction legitimate. A permanent `SIMULATED TELEMETRY` badge is always visible.
@@ -68,6 +69,13 @@ Verified against the live endpoint with `npm run probe` (8/8 checks pass):
   zod schema on Nemotron Ultra; no json_schema-strict fallback was needed.
 - Constraint reconciliation works on the real model: excluding a rack makes the advisory route
   to a different rack and set `learned_from`.
+- Natural-language override interpretation works on the real model: a plain-language operator note
+  is parsed into a structured constraint (kind `exclude_rack`, `avoid_row`, or `pin_job`, plus a
+  target and a reason), all three kinds in 4/4 probe cases (`node scripts/probe_constraint.mjs`,
+  e.g. "B3 has a firmware update in 10 minutes" -> `exclude_rack B3`). Code then validates the
+  target against the live world, with a deterministic regex fallback, so a mis-parse cannot invent
+  a phantom rack. Turning open-ended operator input into a machine-readable rule is the load-bearing
+  model use a fixed rule set cannot cover.
 - Co-location reasoning works on the real model, not just the mock: when a job carries a
   `co_located_with` dependency on its gradient partner, Nemotron migrates it to the partner's rack
   (B3) over the emptiest rack (B15) in 3/3 runs, and adapts to another rack once B3 is excluded
