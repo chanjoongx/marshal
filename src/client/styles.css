@@ -659,3 +659,107 @@ button.primary:hover {
     position: static;
   }
 }
+
+/* ------------------------------ forecast -------------------------------- */
+
+.forecast {
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.forecast.at-risk {
+  border-color: #5a3616;
+}
+.forecast-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.fc-title {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.fc-proj {
+  font-size: 12px;
+  color: var(--muted);
+}
+.forecast.at-risk .fc-proj {
+  color: var(--warn);
+}
+.forecast svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.forecast .throttle-line {
+  stroke: var(--critical);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+.forecast .throttle-text {
+  fill: var(--critical);
+  font-size: 9px;
+  opacity: 0.9;
+}
+.forecast .temp-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.forecast .proj-line {
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+.forecast .proj-line.crossing {
+  stroke: var(--critical);
+}
+.forecast .proj-line.safe {
+  stroke: var(--nominal);
+}
+.forecast .now-dot {
+  fill: var(--accent);
+}
+.forecast .proj-dot.crossing {
+  fill: var(--critical);
+}
+.forecast .proj-dot.safe {
+  fill: var(--nominal);
+}
+.forecast .axis-label {
+  fill: var(--dim);
+  font-size: 9px;
+  font-family: inherit;
+}
+.forecast .proj-text {
+  fill: var(--ink);
+  font-weight: 700;
+}
+
+/* ---------------------------- rule contrast ----------------------------- */
+
+.rule-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px dashed #4a3a22;
+  border-radius: 6px;
+  background: #14100a;
+}
+.rp-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #d9b48a;
+}
+.rp-body {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}

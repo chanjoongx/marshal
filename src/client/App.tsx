@@ -1,6 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "./useSession";
+import { SIM } from "../shared/types";
 import type { Advisory, AdvisoryRecord, RackState, Resolution, WorldState } from "../shared/types";
+
+type ForecastPoint = { t: number; temp: number; proj: number; id: string };
 
 const SPEEDS = [1, 4, 8] as const;
 
@@ -20,6 +23,23 @@ export function App() {
   }, [advisory, world]);
 
   const speed = world?.speed ?? 1;
+
+  // Accumulate the at-risk rack's temperature so the agent can show its live forecast: the
+  // history line, the 5-minute projection, and the throttle line it is trying to stay under.
+  const [history, setHistory] = useState<ForecastPoint[]>([]);
+  const simTime = world?.sim_time_s ?? 0;
+  useEffect(() => {
+    if (!world || world.racks.length === 0) return;
+    const focus = [...world.racks].sort((a, b) => b.projected_temp_5m - a.projected_temp_5m)[0];
+    setHistory((h) => {
+      const last = h[h.length - 1];
+      if (last && last.t === simTime) return h; // one point per sim-second
+      const base = last && simTime < last.t ? [] : h; // reset when the scenario restarts
+      return [...base, { t: simTime, temp: focus.gpu_temp_c, proj: focus.projected_temp_5m, id: focus.id }].slice(-90);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simTime]);
+  const showForecast = history.length >= 3 && history[history.length - 1].proj >= 72;
 
   return (
     <div className="app">
@@ -80,6 +100,8 @@ export function App() {
           ) : (
             <div className="feed-empty">Marshal is watching {world?.racks.length ?? 24} racks. No action required.</div>
           )}
+
+          {showForecast ? <ForecastChart history={history} throttle={SIM.THROTTLE_TEMP_C} /> : null}
 
           {whyText ? (
             <div className="why">
@@ -145,6 +167,14 @@ function AdvisoryCard(props: {
       {learnedLabel ? (
         <div className="learned" data-testid="advisory-learned">
           {learnedLabel}
+        </div>
+      ) : null}
+      {advisory.rule_pick ? (
+        <div className="rule-pick" data-testid="advisory-rule-pick">
+          <span className="rp-label">a headroom-only rule would</span>
+          <span className="rp-body">
+            {advisory.rule_pick.one_line} — {advisory.rule_pick.flaw}
+          </span>
         </div>
       ) : null}
       {advisory.alternatives.length > 0 ? (
@@ -279,6 +309,60 @@ function RackCell(props: { rack: RackState }) {
       <span className="rid">{r.id}</span>
       <span className="rtemp">{Math.round(r.gpu_temp_c)}&deg;</span>
       <span className="rproj">&rarr;{Math.round(proj)}&deg;</span>
+    </div>
+  );
+}
+
+/**
+ * The agent's live temperature forecast for the at-risk rack: the measured history, the 5-minute
+ * projection, and the throttle line it is steering under. This is Marshal reasoning out loud, not
+ * a monitoring chart: it appears only while a rack is heading toward throttle, and the projection
+ * bends away the moment an action is approved.
+ */
+function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
+  const { history, throttle } = props;
+  const W = 344;
+  const H = 132;
+  const padL = 8;
+  const padR = 44;
+  const padT = 14;
+  const padB = 18;
+  const last = history[history.length - 1];
+  const tMin = history[0].t;
+  const tMax = last.t + SIM.PROJECTION_HORIZON_S;
+  const yMin = 55;
+  const yMax = 92;
+  const sx = (t: number) => padL + ((W - padL - padR) * (t - tMin)) / Math.max(1, tMax - tMin);
+  const sy = (v: number) => padT + (H - padT - padB) * (1 - (Math.min(yMax, Math.max(yMin, v)) - yMin) / (yMax - yMin));
+  const tempPath = history.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.temp).toFixed(1)}`).join(" ");
+  const nowX = sx(last.t);
+  const nowY = sy(last.temp);
+  const projX = sx(last.t + SIM.PROJECTION_HORIZON_S);
+  const projY = sy(last.proj);
+  const throttleY = sy(throttle);
+  const willCross = last.proj >= throttle;
+  return (
+    <div className={`forecast ${willCross ? "at-risk" : "safe"}`} data-testid="forecast-chart">
+      <div className="forecast-head">
+        <span className="fc-title">MARSHAL FORECAST · {last.id}</span>
+        <span className="fc-proj">
+          {willCross ? "projected to cross " : "projected "}
+          {Math.round(last.proj)}&deg;C in 5 min
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`temperature forecast for ${last.id}`}>
+        <line className="throttle-line" x1={padL} y1={throttleY} x2={W - padR} y2={throttleY} />
+        <text className="axis-label throttle-text" x={W - padR + 4} y={throttleY + 3}>
+          {throttle}&deg; throttle
+        </text>
+        <path className="temp-line" d={tempPath} fill="none" />
+        <line className={`proj-line ${willCross ? "crossing" : "safe"}`} x1={nowX} y1={nowY} x2={projX} y2={projY} />
+        <circle className="now-dot" cx={nowX} cy={nowY} r={3} />
+        <circle className={`proj-dot ${willCross ? "crossing" : "safe"}`} cx={projX} cy={projY} r={3} />
+        <text className="axis-label proj-text" x={projX - 4} y={projY - 6} textAnchor="end">
+          {Math.round(last.proj)}&deg;
+        </text>
+      </svg>
     </div>
   );
 }
