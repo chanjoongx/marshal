@@ -281,6 +281,7 @@ function Heatmap(props: { world: WorldState | null }) {
   const rowB = racks.filter((r) => r.row === "B").sort((a, b) => a.position - b.position);
   const rowA = racks.filter((r) => r.row === "A").sort((a, b) => a.position - b.position);
   const s = props.world?.cluster_summary;
+  const projectedAtRisk = racks.filter((r) => SIM.THROTTLE_TEMP_C - r.projected_temp_5m <= SIM.BAND_WARN_MARGIN_C).length;
   return (
     <div className="heatmap">
       <div className="heat-head">
@@ -288,7 +289,8 @@ function Heatmap(props: { world: WorldState | null }) {
       </div>
       {s ? (
         <div className="cluster">
-          {s.racks_total} racks · watch {s.racks_watch} · warn {s.racks_warn} · critical {s.racks_critical}
+          {s.racks_total} racks · {projectedAtRisk} projected at-risk · now {s.racks_watch} watch / {s.racks_warn} warn /{" "}
+          {s.racks_critical} critical
         </div>
       ) : null}
       <div className="aisle-label">Aisle B - GPU compute</div>
