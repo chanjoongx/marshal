@@ -86,15 +86,22 @@ export class Agent {
     );
     if (eligible.length === 0) return { status: this.statusLine(sim, states, this.mostUrgent(atRisk)) };
 
-    // Tier 2 (DeepSeek): triage. Only "at_risk" racks escalate to the heavy model.
-    const snap = this.buildSnapshot(sim, this.mostUrgent(eligible).id, "band_cross", session);
-    const classes = await this.provider.classifyRisk(snap);
-    const atRiskIds = new Set(classes.filter((c) => c.risk === "at_risk").map((c) => c.rack_id));
-    const escalate = eligible.filter((s) => atRiskIds.has(s.id));
+    // Code (authoritative): the heavy model fires only for projected warn or worse. This threshold
+    // is computed from the projection, not delegated, so nothing can suppress a real throttle.
+    const escalate = eligible.filter((s) => projMargin(s) <= SIM.BAND_WARN_MARGIN_C);
     if (escalate.length === 0) return { status: this.statusLine(sim, states, this.mostUrgent(eligible)) };
 
-    // Tier 3 (Nemotron): one advisory for the single most urgent at-risk rack.
-    const focus = this.mostUrgent(escalate);
+    // Tier 2 (DeepSeek): a fast second opinion that PRIORITIZES which warn+ rack to advise first.
+    // It never gates: code already chose the escalate set above, so a wrong "nominal" from the
+    // classifier cannot hide a throttle. It labels and orders, nothing more (docs/AGENT_SPEC.md).
+    const snap = this.buildSnapshot(sim, this.mostUrgent(escalate).id, "band_cross", session);
+    const classes = await this.provider.classifyRisk(snap);
+    const modelConfirms = new Set(classes.filter((c) => c.risk === "at_risk").map((c) => c.rack_id));
+    const confirmed = escalate.filter((s) => modelConfirms.has(s.id));
+
+    // Tier 3 (Nemotron): one advisory for the single most urgent rack, preferring one the classifier
+    // also flagged, but never dropping a code-flagged rack.
+    const focus = this.mostUrgent(confirmed.length ? confirmed : escalate);
     const advisory = await this.solveAdvisory(sim, focus.id, "band_cross", session);
     this.markIssued(focus.id, SEV_RANK[projBand(focus)], sim.simTime);
     this.pushRecord(session, advisory);
