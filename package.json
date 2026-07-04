@@ -15,7 +15,10 @@
     "test:smoke": "playwright test",
     "check": "npm run typecheck && npm run test",
     "curve": "node scripts/curve_check.mjs",
-    "probe": "node scripts/probe.mjs"
+    "probe": "node scripts/probe.mjs",
+    "probe:reasoning": "node scripts/probe_reasoning.mjs",
+    "probe:constraint": "node scripts/probe_constraint.mjs",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "react": "^19.2.7",
