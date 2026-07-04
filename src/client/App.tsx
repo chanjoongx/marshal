@@ -1,0 +1,284 @@
+import { useMemo, useState } from "react";
+import { useSession } from "./useSession";
+import type { Advisory, AdvisoryRecord, RackState, Resolution, WorldState } from "../shared/types";
+
+const SPEEDS = [1, 4, 8] as const;
+
+export function App() {
+  const { connected, world, agentStatus, advisory, whyText, resolution, actions } = useSession();
+  const [overrideOpen, setOverrideOpen] = useState(false);
+
+  const outcome = useMemo(() => {
+    if (!advisory || !world) return "pending";
+    return world.advisories_recent.find((r) => r.advisory.id === advisory.id)?.outcome ?? "pending";
+  }, [advisory, world]);
+
+  const learnedLabel = useMemo(() => {
+    if (!advisory?.learned_from) return null;
+    const c = world?.constraints.find((x) => x.id === advisory.learned_from);
+    return c ? `learned: avoids ${c.target} (${c.reason})` : "learned: operator rule applied";
+  }, [advisory, world]);
+
+  const speed = world?.speed ?? 1;
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="mark">MARSHAL</span>
+          <span className="tagline">predicts rack thermal throttling before it happens</span>
+        </div>
+        <div className="topbar-right">
+          <span className={`link ${connected ? "up" : "down"}`}>{connected ? "live" : "offline"}</span>
+          <span className="badge" data-testid="simulated-badge">
+            SIMULATED TELEMETRY
+          </span>
+        </div>
+      </header>
+
+      <div className="controls">
+        <button className="primary" data-testid="start-s1" onClick={actions.startS1}>
+          Start S1 — batch surge
+        </button>
+        <div className="speeds">
+          <span className="lbl">speed</span>
+          {SPEEDS.map((s) => (
+            <button
+              key={s}
+              data-testid={`speed-${s}x`}
+              className={speed === s ? "on" : ""}
+              onClick={() => actions.setSpeed(s)}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+        <div className="clock">
+          <span className="lbl">sim</span> t={world?.sim_time_s ?? 0}s
+          {world?.scenario && world.scenario !== "idle" ? <span className="scn"> · {world.scenario}</span> : null}
+        </div>
+      </div>
+
+      <div className="agent-status" data-testid="agent-status">
+        <span className="pulse" aria-hidden />
+        {agentStatus}
+      </div>
+
+      <main className="layout">
+        <section className="feed" aria-label="agent feed">
+          <div className="feed-head">AGENT FEED</div>
+
+          {advisory ? (
+            <AdvisoryCard
+              advisory={advisory}
+              outcome={outcome}
+              learnedLabel={learnedLabel}
+              onApprove={() => actions.approve(advisory.id)}
+              onOverride={() => setOverrideOpen((v) => !v)}
+              onWhy={() => actions.why(advisory.id)}
+            />
+          ) : (
+            <div className="feed-empty">Marshal is watching {world?.racks.length ?? 24} racks. No action required.</div>
+          )}
+
+          {whyText ? (
+            <div className="why">
+              <div className="why-label">Why</div>
+              <div className="why-body" data-testid="why-text">
+                {whyText}
+              </div>
+            </div>
+          ) : null}
+
+          {overrideOpen && advisory ? (
+            <OverridePanel
+              onSubmit={(target, reason) => {
+                actions.override(advisory.id, reason, { kind: "exclude_rack", target, reason });
+                setOverrideOpen(false);
+              }}
+              onCancel={() => setOverrideOpen(false)}
+            />
+          ) : null}
+
+          {resolution ? <ResolutionCard resolution={resolution} /> : null}
+
+          <FeedLog records={world?.advisories_recent ?? []} activeId={advisory?.id} />
+        </section>
+
+        <aside className="context" aria-label="rack view">
+          <Heatmap world={world} />
+        </aside>
+      </main>
+
+      <footer className="footer">
+        reasoning: NVIDIA-Nemotron-3-Ultra-550B via Crusoe Managed Inference
+      </footer>
+    </div>
+  );
+}
+
+function AdvisoryCard(props: {
+  advisory: Advisory;
+  outcome: string;
+  learnedLabel: string | null;
+  onApprove: () => void;
+  onOverride: () => void;
+  onWhy: () => void;
+}) {
+  const { advisory, outcome, learnedLabel } = props;
+  const pending = outcome === "pending";
+  return (
+    <div className={`card sev-${advisory.severity} ${pending ? "" : "resolved"}`} data-testid="advisory-card" data-advisory-id={advisory.id}>
+      <div className="card-top">
+        <span className={`sev-chip sev-${advisory.severity}`}>{advisory.severity}</span>
+        <span className="area">{advisory.area}</span>
+        {advisory.origin === "auto" ? <span className="auto-chip">rule-based</span> : <span className="model-chip">Nemotron</span>}
+        {!pending ? <span className="outcome-chip">{outcome}</span> : null}
+      </div>
+      <div className="headline" data-testid="advisory-headline">
+        {advisory.headline}
+      </div>
+      <div className="rationale">{advisory.rationale}</div>
+      <div className="action" data-testid="advisory-action">
+        {advisory.action.one_line}
+      </div>
+      {learnedLabel ? (
+        <div className="learned" data-testid="advisory-learned">
+          {learnedLabel}
+        </div>
+      ) : null}
+      {advisory.alternatives.length > 0 ? (
+        <div className="alts">
+          alternatives: {advisory.alternatives.map((a) => a.one_line).join(" · ")}
+        </div>
+      ) : null}
+      <div className="btns">
+        <button className="approve" data-testid="btn-approve" disabled={!pending} onClick={props.onApprove}>
+          Approve
+        </button>
+        <button className="override" data-testid="btn-override" disabled={!pending} onClick={props.onOverride}>
+          Override
+        </button>
+        <button className="why" data-testid="btn-why" onClick={props.onWhy}>
+          Why
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OverridePanel(props: { onSubmit: (target: string, reason: string) => void; onCancel: () => void }) {
+  const [target, setTarget] = useState("");
+  const [reason, setReason] = useState("");
+  return (
+    <div className="override">
+      <div className="override-head">Add a constraint Marshal cannot see from telemetry</div>
+      <label>
+        <span>Rack to exclude</span>
+        <input data-testid="override-target" value={target} placeholder="B12" onChange={(e) => setTarget(e.target.value)} />
+      </label>
+      <label>
+        <span>Reason</span>
+        <input data-testid="override-reason" value={reason} placeholder="in maintenance" onChange={(e) => setReason(e.target.value)} />
+      </label>
+      <div className="override-btns">
+        <button className="approve" data-testid="override-submit" onClick={() => props.onSubmit(target.trim(), reason.trim())}>
+          Submit override
+        </button>
+        <button className="ghost" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResolutionCard(props: { resolution: Resolution }) {
+  const { resolution } = props;
+  return (
+    <div className="resolution">
+      <div className="resolution-head">Resolved · {resolution.area}</div>
+      <div className="resolution-summary">{resolution.summary}</div>
+      <ol className="timeline">
+        {resolution.timeline.map((e, i) => (
+          <li key={i}>
+            <span className="t">t={Math.round(e.ts)}s</span> {e.label}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function FeedLog(props: { records: AdvisoryRecord[]; activeId?: string }) {
+  const past = props.records.filter((r) => r.advisory.id !== props.activeId).slice(-5).reverse();
+  if (past.length === 0) return null;
+  return (
+    <div className="log">
+      <div className="log-head">history</div>
+      {past.map((r) => (
+        <div className={`log-entry outcome-${r.outcome}`} key={r.advisory.id}>
+          <span className="log-outcome">{r.outcome}</span>
+          <span className="log-line">{r.advisory.action.one_line}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Heatmap(props: { world: WorldState | null }) {
+  const racks = props.world?.racks ?? [];
+  const rowB = racks.filter((r) => r.row === "B").sort((a, b) => a.position - b.position);
+  const rowA = racks.filter((r) => r.row === "A").sort((a, b) => a.position - b.position);
+  const s = props.world?.cluster_summary;
+  return (
+    <div className="heatmap">
+      <div className="heat-head">
+        RACK VIEW <span className="ctx">context</span>
+      </div>
+      {s ? (
+        <div className="cluster">
+          {s.racks_total} racks · watch {s.racks_watch} · warn {s.racks_warn} · critical {s.racks_critical}
+        </div>
+      ) : null}
+      <div className="aisle-label">Aisle B — GPU compute</div>
+      <div className="grid grid-b">
+        {rowB.map((r) => (
+          <RackCell key={r.id} rack={r} />
+        ))}
+      </div>
+      <div className="aisle-label">Aisle A — mixed</div>
+      <div className="grid grid-a">
+        {rowA.map((r) => (
+          <RackCell key={r.id} rack={r} />
+        ))}
+      </div>
+      <div className="legend">
+        <span className="band-nominal">nominal</span>
+        <span className="band-watch">watch</span>
+        <span className="band-warn">warn</span>
+        <span className="band-critical">critical</span>
+      </div>
+    </div>
+  );
+}
+
+function RackCell(props: { rack: RackState }) {
+  const r = props.rack;
+  const proj = r.projected_temp_5m;
+  const willThrottle = 84 - proj <= 15 && r.band === "nominal";
+  return (
+    <div
+      className={`rack band-${r.band} ${willThrottle ? "predicted" : ""}`}
+      data-testid={`rack-${r.id}`}
+      data-temp={r.gpu_temp_c}
+      data-projected={r.projected_temp_5m}
+      data-band={r.band}
+      title={`${r.id}: ${r.gpu_temp_c}C now, ${proj}C projected, headroom ${r.headroom_w}W`}
+    >
+      <span className="rid">{r.id}</span>
+      <span className="rtemp">{Math.round(r.gpu_temp_c)}&deg;</span>
+      <span className="rproj">&rarr;{Math.round(proj)}&deg;</span>
+    </div>
+  );
+}
