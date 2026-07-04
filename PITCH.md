@@ -28,7 +28,7 @@ something the telemetry does not: B3 has a firmware update in ten minutes. They 
 single field in plain language, no form, no dropdown: 'B3 has a firmware update in 10 min.' Marshal
 interprets that sentence live into a structured constraint, exclude_rack B3, checks B3 is a real
 rack, and re-solves in seconds; with the co-location no longer reachable, headroom is now the right
-call, so it routes to B15 and shows a 'learned: avoids rack B3' chip. Approve, and on the forecast
+call, so it routes to a feasible high-headroom rack that avoids B3 and shows a 'learned: avoids rack B3' chip. Approve, and on the forecast
 B7's projection bends back down, away from the throttle line."
 
 Learning (30s). "Watch the next event. A different aisle spikes, and its hot job happens to want
@@ -77,7 +77,7 @@ training run degrades. A headroom-only rule migrates to B15, the emptiest rack, 
 co-location; the model migrates to B3, the partner's rack, even though B3 has far less headroom, and
 the card puts both picks side by side. Then the operator excludes B3 for a firmware window, the
 co-location becomes impossible, and the model adapts, now headroom is the right criterion so it
-routes to B15 on its own. Encoding every such combination as if-statements explodes and cannot
+routes to a feasible high-headroom rack that avoids B3 on its own. Encoding every such combination as if-statements explodes and cannot
 absorb a new operator rule mid-shift. Code does every calculation and enforces feasibility,
 validating that the target exists and re-checking the action against physics, the power budget, and
 the constraints; the model does the language understanding and the judgment. This holds on the real

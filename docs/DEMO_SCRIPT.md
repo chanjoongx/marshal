@@ -19,8 +19,11 @@ running the checkpoint writer has a firmware update in 10 min`: the model reads 
 list, maps the checkpoint-writer job (`ckpt-9`) to B3, and interprets it into an `exclude_rack B3`
 constraint, which is the one step a regex cannot do (`scripts/probe_constraint.mjs`, 5/5, 2 of them
 description-only). Marshal re-solves: with the co-location no longer reachable, headroom becomes the
-right criterion, so it routes `job-4471` to B15, the emptiest rack. The second event then routes
-around B3 on its own (the mock uses B14; the live model picks whichever feasible rack it prefers).
+right criterion, so it routes `job-4471` to a high-headroom rack that avoids B3. The offline mock
+picks B15; the live model picks a feasible high-headroom rack that avoids B3, which may be B15 or
+another such as B12, both correct, so narrate "a rack that avoids B3", not "the emptiest rack". The
+second event then routes around B3 on its own (the mock uses B14; the live model picks whichever
+feasible rack it prefers).
 The safe fallback is the id-bearing note `B3 has a firmware update in 10 min`, which even the regex
 resolves; that is exactly what the offline smoke test drives (it fills `B3 has a firmware update in
 10 min` and submits against the mock, whose `interpretConstraint` is only the regex).
@@ -37,7 +40,7 @@ margin and B7 never actually throttles on screen.
 | 0-8s | 88-120 | console + nominal |
 | 8-20s | 120-168 | surge + WARN card (co-locates on B3) + forecast chart + rule-vs-model box |
 | 20-30s | 168-208 | Why + Override (type checkpoint-writer note) |
-| 30-45s | 208-268 | re-solve to B15 + Approve + forecast bends away from 84C |
+| 30-45s | 208-268 | re-solve to a high-headroom rack that avoids B3 + Approve + forecast bends away |
 | 45-55s | 268-308 | second event, routes around B3 on its own |
 | 55-60s | 308-328 | resolution |
 
@@ -80,13 +83,15 @@ where the model is provably load-bearing. Code then checks B3 is a real rack bef
 ### 30-45s  Reconcile, re-solve, Approve, forecast bends away
 Marshal injects the constraint and re-solves in seconds. With B3 excluded the co-location can no
 longer be preserved, so headroom becomes the right criterion and a new advisory replaces the old:
-- headline: `B3 excluded for firmware, co-location lost, re-solving B7 to B15`
-- action line: `Migrate job-4471 to B15 (co-location lost), cap B7 intake`
+- headline (mock example): `B3 excluded for firmware, co-location lost, re-solving B7 to B15`
+- action line (mock example): `Migrate job-4471 to B15 (co-location lost), cap B7 intake`
+- the live model may name a different high-headroom rack that avoids B3 (B15, or for example B12);
+  what matters on screen is that it avoids B3, so do not narrate "the emptiest rack"
 - learned chip on the card: `learned: avoids rack B3` (the rack resolved from the description; the
   parenthetical carries the note's short reason)
-Engineer taps `Approve`. B15 lights up in the heatmap, and in the MARSHAL FORECAST the projection
-line bends down and away from the 84C throttle line before the chart clears as B7 settles back to
-nominal.
+Engineer taps `Approve`. The chosen rack lights up in the heatmap, and in the MARSHAL FORECAST the
+projection line bends down and away from the 84C throttle line before the chart clears as B7 settles
+back to nominal.
 
 ### 45-55s  Second event, learning proven
 A different aisle spikes: A5 takes a surge whose high-priority job also co-locates with job-4470
@@ -116,6 +121,6 @@ Temps return to nominal. A resolution card shows a mini incident timeline: surge
 - Dry-run the click path once. The first target is B3 (co-location), so the path is fixed:
   Why -> Override, type "the rack running the checkpoint writer has a firmware update in 10 min"
   (the descriptive note, so the model resolves what a regex cannot; fall back to "B3 has a firmware
-  update in 10 min" if the live model stumbles) -> Approve the B15 re-solve -> second event ->
+  update in 10 min" if the live model stumbles) -> Approve the re-solve -> second event ->
   Approve.
 - Record one clean take. Upload to YouTube unlisted or Loom. Put the URL in SUBMISSION.md.
