@@ -70,6 +70,9 @@ class ScriptedProvider implements Provider {
   async why(): Promise<string> {
     return "stub";
   }
+  async interpretConstraint(): Promise<null> {
+    return null;
+  }
 }
 
 /* ----------------------------- validateAction ------------------------------ */
@@ -232,12 +235,9 @@ describe("S1 override and learning path (MockProvider)", () => {
     expect(a1.rule_pick?.to_rack).toBe("B15"); // the greedy headroom pick
     expect(a1.rule_pick?.flaw).toContain("co-location");
 
-    // 2. Override: exclude B3 (firmware). Co-location is lost, so re-solve to B15, learned rule set.
-    const a2 = await agent.handleOverride(sim, session, a1.id, "firmware update in 10 min", {
-      kind: "exclude_rack",
-      target: "B3",
-      reason: "firmware update in 10 min",
-    });
+    // 2. Override in plain language: the mock interprets it into exclude_rack B3. Co-location is
+    // lost, so re-solve to B15, learned rule set.
+    const a2 = await agent.handleOverride(sim, session, a1.id, "B3 has a firmware update in 10 min");
     expect(a2).not.toBeNull();
     expect(a2!.action.params.to_rack).toBe("B15");
     expect(a2!.action.params.to_rack).not.toBe("B3");

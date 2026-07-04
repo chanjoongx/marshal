@@ -78,22 +78,15 @@ export const ControlApproveSchema = z.object({
 });
 
 /**
- * Override adds a structured constraint (server assigns id/ts/source) that is injected
- * into every future snapshot. `reason` is stored on the advisory record; `constraint`
- * is the machine-readable rule the agent must reconcile going forward.
+ * Override carries the operator's plain-language note. The agent has the model interpret it into a
+ * structured constraint (kind, target), validates the target against the live world, and injects
+ * it into every future snapshot as the machine-readable rule it must reconcile going forward.
  */
 export const ControlOverrideSchema = z.object({
   type: z.literal("control"),
   action: z.literal("override"),
   advisory_id: z.string(),
-  reason: z.string(),
-  constraint: z
-    .object({
-      kind: ConstraintKindSchema,
-      target: z.string(),
-      reason: z.string(),
-    })
-    .optional(),
+  text: z.string(),
 });
 
 export const ControlDismissSchema = z.object({

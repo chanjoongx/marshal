@@ -10,23 +10,23 @@ import type {
   Advisory,
   AdvisoryRecord,
   Constraint,
-  ConstraintKind,
   RackState,
   Resolution,
   Snapshot,
   SnapshotTrigger,
   ThermalBand,
 } from "../shared/types";
-import { validateAction, ruleBasedAdvisory, naiveHeadroomPick, type Provider } from "../inference/inference";
+import {
+  validateAction,
+  ruleBasedAdvisory,
+  naiveHeadroomPick,
+  heuristicConstraint,
+  type Provider,
+  type InterpretedConstraint,
+} from "../inference/inference";
 import { Sim, band } from "./sim";
 
 const SEV_RANK: Record<ThermalBand, number> = { nominal: 0, watch: 1, warn: 2, critical: 3 };
-
-export interface OverrideConstraintInput {
-  kind: ConstraintKind;
-  target: string;
-  reason: string;
-}
 
 /** Shared, DO-owned world state the agent reads and writes. */
 export interface SessionState {
@@ -192,33 +192,27 @@ export class Agent {
    * re-solve for the same focus rack with trigger "override". The new advisory must reconcile
    * the constraint and set learned_from (AGENT_SPEC 5).
    */
-  async handleOverride(
-    sim: Sim,
-    session: SessionState,
-    advisoryId: string,
-    reason: string,
-    constraintInput?: OverrideConstraintInput,
-  ): Promise<Advisory | null> {
+  async handleOverride(sim: Sim, session: SessionState, advisoryId: string, text: string): Promise<Advisory | null> {
     const rec = session.records.find((r) => r.advisory.id === advisoryId);
     if (!rec) return null;
     const focusId = this.focusOf(rec.advisory);
 
-    const constraint: Constraint = {
-      id: `c${session.constraints.length + 1}`,
-      kind: constraintInput?.kind ?? "exclude_rack",
-      target: constraintInput?.target ?? "",
-      reason: constraintInput?.reason ?? reason,
-      ts: sim.simTime,
-      source: "override",
-    };
-    session.constraints.push(constraint);
+    // The model reads the operator's plain-language note and turns it into a structured rule;
+    // code then checks the target is real before trusting it (falling back to a pattern parse).
+    const snap = this.buildSnapshot(sim, focusId, "override", session);
+    const interpreted = this.validateConstraint(await this.provider.interpretConstraint(text, snap), text, sim);
+    const constraint: Constraint | null = interpreted
+      ? { id: `c${session.constraints.length + 1}`, ...interpreted, ts: sim.simTime, source: "override" }
+      : null;
+    if (constraint) session.constraints.push(constraint);
+
     rec.outcome = "overridden";
-    rec.operator_reason = reason;
+    rec.operator_reason = text;
     rec.resolved_ts = sim.simTime;
     this.clearPending(focusId);
     session.timeline.push({
       ts: sim.simTime,
-      label: `override: ${constraint.kind} ${constraint.target} — ${reason}`,
+      label: constraint ? `override: ${constraint.kind} ${constraint.target} — ${text}` : `override: ${text}`,
     });
 
     const advisory = await this.solveAdvisory(sim, focusId, "override", session);
@@ -227,6 +221,23 @@ export class Agent {
     this.markIssued(focusId, focusState ? SEV_RANK[projBand(focusState)] : SEV_RANK.warn, sim.simTime);
     session.timeline.push({ ts: sim.simTime, label: `re-solve: ${advisory.headline}` });
     return advisory;
+  }
+
+  /** Trust the interpreted constraint only if its target actually exists in the world; otherwise
+   *  fall back to a rack id found anywhere in the note, so a mis-parse never invents a phantom. */
+  private validateConstraint(c: InterpretedConstraint | null, text: string, sim: Sim): InterpretedConstraint | null {
+    const states = sim.getRackStates();
+    const rackIds = new Set(states.map((s) => s.id));
+    const rows = new Set(states.map((s) => s.row));
+    const jobIds = new Set(states.flatMap((s) => s.active_jobs.map((j) => j.id)));
+    const valid = (x: InterpretedConstraint | null): boolean =>
+      !!x &&
+      ((x.kind === "exclude_rack" && rackIds.has(x.target)) ||
+        (x.kind === "avoid_row" && rows.has(x.target)) ||
+        (x.kind === "pin_job" && jobIds.has(x.target)));
+    if (valid(c)) return c;
+    const fromText = heuristicConstraint(text);
+    return valid(fromText) ? fromText : null;
   }
 
   handleDismiss(sim: Sim, session: SessionState, advisoryId: string): boolean {

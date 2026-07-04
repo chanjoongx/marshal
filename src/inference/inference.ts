@@ -20,6 +20,7 @@ import {
   RiskClassificationSchema,
   type Advisory,
   type Action,
+  type ConstraintKind,
   type Job,
   type RackState,
   type RiskClassification,
@@ -50,6 +51,15 @@ export interface Provider {
   advise(snapshot: Snapshot, feedback?: string): Promise<Advisory>;
   /** Heavy tier: <= 3 sentences justifying an advisory with snapshot numbers, no new advice. */
   why(snapshot: Snapshot, advisoryId: string): Promise<string>;
+  /** Interpret a shift engineer's free-text override note into one structured constraint, or
+   *  null if nothing actionable is found. This is the load-bearing natural-language step. */
+  interpretConstraint(text: string, snapshot: Snapshot): Promise<InterpretedConstraint | null>;
+}
+
+export interface InterpretedConstraint {
+  kind: ConstraintKind;
+  target: string;
+  reason: string;
 }
 
 export function getProvider(env: InferenceEnv): Provider {
@@ -350,6 +360,24 @@ export class MockProvider implements Provider {
     const ttt = r.time_to_throttle_s === null ? "not currently trending to throttle" : `time to throttle is ${Math.round(r.time_to_throttle_s)} seconds`;
     return `${focusId} is at ${round(r.gpu_temp_c)}C and projected to reach ${round(r.projected_temp_5m)}C within 5 minutes; ${ttt}. Its ${Math.round(r.power_draw_w)}W draw against a headroom of ${Math.round(r.headroom_w)}W is why it will cross the 84C throttle line without shedding load.`;
   }
+
+  async interpretConstraint(text: string): Promise<InterpretedConstraint | null> {
+    return heuristicConstraint(text);
+  }
+}
+
+/** Deterministic fallback parse: pull a constraint out of an operator note by pattern. Used by
+ *  the offline mock and as a safety net when the live model's parse does not validate. */
+export function heuristicConstraint(text: string): InterpretedConstraint | null {
+  const rack = text.match(/\b([AB]\d{1,2})\b/i)?.[1]?.toUpperCase();
+  const job = text.match(/\b(job-\d+)\b/i)?.[1]?.toLowerCase();
+  const row = text.match(/\brow\s+([AB])\b/i)?.[1]?.toUpperCase();
+  const reason = text.trim();
+  if (job && /\b(pin|keep|leave|hold|stay|do ?n'?t move)\b/i.test(text)) return { kind: "pin_job", target: job, reason };
+  if (row && !rack) return { kind: "avoid_row", target: row, reason };
+  if (rack) return { kind: "exclude_rack", target: rack, reason };
+  if (job) return { kind: "pin_job", target: job, reason };
+  return null;
 }
 
 function focusJob(snapshot: Snapshot, rackId: string): Job | undefined {
@@ -456,6 +484,31 @@ export class CrusoeProvider implements Provider {
     return stripThink(content).trim();
   }
 
+  async interpretConstraint(text: string): Promise<InterpretedConstraint | null> {
+    try {
+      const content = await this.call({
+        model: this.modelAdvisory,
+        messages: [
+          { role: "system", content: CONSTRAINT_SYSTEM },
+          { role: "user", content: text },
+        ],
+        temperature: 0.2,
+        top_p: 0.95,
+        max_tokens: 120,
+        chat_template_kwargs: { enable_thinking: false },
+        response_format: { type: "json_object" },
+      });
+      const parsed = JSON.parse(safeJson(stripThink(content)));
+      const kind = parsed?.kind;
+      if (kind !== "exclude_rack" && kind !== "avoid_row" && kind !== "pin_job") return heuristicConstraint(text);
+      const target = String(parsed.target ?? "").trim();
+      if (!target) return heuristicConstraint(text);
+      return { kind, target, reason: String(parsed.reason ?? text).trim() };
+    } catch {
+      return heuristicConstraint(text); // model unavailable: fall back to the pattern parse
+    }
+  }
+
   /** POST /chat/completions. */
   private async call(body: Record<string, unknown>): Promise<string> {
     const res = await fetch(`${this.base}/chat/completions`, {
@@ -505,5 +558,11 @@ Rules:
 - Terse operations English. No exclamation marks.`;
 
 export const WHY_SYSTEM = `You are Marshal explaining a recommendation to a shift engineer. In at most 3 sentences, justify the current advisory using ONLY numbers from the snapshot (current temp, projected temp, time to throttle, headroom). Cite specific values. Do NOT propose a new action or add new advice. Terse operations English, no exclamation marks.`;
+
+export const CONSTRAINT_SYSTEM = `You convert a shift engineer's free-text note into ONE structured operational constraint for a GPU data center scheduler. Return ONLY minified JSON: {"kind":"exclude_rack|avoid_row|pin_job","target":string,"reason":string}.
+- exclude_rack: a specific rack must not receive migrations. target = the rack id, like "B3" or "B12".
+- avoid_row: a whole aisle or row should be avoided. target = the row letter, like "A" or "B".
+- pin_job: a specific job must not be moved off its rack. target = the job id, like "job-4471".
+Pick the single best-fitting kind. target is only the identifier, no extra words. reason is a short phrase. Return ONLY the JSON.`;
 
 export const CLASSIFY_SYSTEM = `You triage GPU rack thermal risk. For each rack in the snapshot, classify risk as "nominal", "elevated", or "at_risk" based on its projected temperature and headroom. Output ONLY minified JSON: {"classifications":[{"rack_id":string,"risk":"nominal|elevated|at_risk"}]}. No prose.`;

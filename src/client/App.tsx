@@ -19,7 +19,10 @@ export function App() {
   const learnedLabel = useMemo(() => {
     if (!advisory?.learned_from) return null;
     const c = world?.constraints.find((x) => x.id === advisory.learned_from);
-    return c ? `learned: avoids ${c.target} (${c.reason})` : "learned: operator rule applied";
+    if (!c) return "learned: operator rule applied";
+    const verb =
+      c.kind === "avoid_row" ? `avoids row ${c.target}` : c.kind === "pin_job" ? `pins ${c.target}` : `avoids rack ${c.target}`;
+    return `learned: ${verb} (${c.reason})`;
   }, [advisory, world]);
 
   const speed = world?.speed ?? 1;
@@ -114,8 +117,8 @@ export function App() {
 
           {overrideOpen && advisory ? (
             <OverridePanel
-              onSubmit={(target, reason) => {
-                actions.override(advisory.id, reason, { kind: "exclude_rack", target, reason });
+              onSubmit={(text) => {
+                actions.override(advisory.id, text);
                 setOverrideOpen(false);
               }}
               onCancel={() => setOverrideOpen(false)}
@@ -207,22 +210,29 @@ function AdvisoryCard(props: {
   );
 }
 
-function OverridePanel(props: { onSubmit: (target: string, reason: string) => void; onCancel: () => void }) {
-  const [target, setTarget] = useState("");
-  const [reason, setReason] = useState("");
+function OverridePanel(props: { onSubmit: (text: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState("");
+  const submit = () => {
+    if (text.trim()) props.onSubmit(text.trim());
+  };
   return (
     <div className="override">
-      <div className="override-head">Add a constraint Marshal cannot see from telemetry</div>
+      <div className="override-head">Tell Marshal what the telemetry cannot see</div>
       <label>
-        <span>Rack to exclude</span>
-        <input data-testid="override-target" value={target} placeholder="B12" onChange={(e) => setTarget(e.target.value)} />
+        <span>In plain language</span>
+        <input
+          data-testid="override-text"
+          value={text}
+          placeholder="B3 has a firmware update in 10 min"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+        />
       </label>
-      <label>
-        <span>Reason</span>
-        <input data-testid="override-reason" value={reason} placeholder="in maintenance" onChange={(e) => setReason(e.target.value)} />
-      </label>
+      <div className="override-hint">Marshal reads this and reconciles it. Exclude a rack, avoid a row, or pin a job.</div>
       <div className="override-btns">
-        <button className="approve" data-testid="override-submit" onClick={() => props.onSubmit(target.trim(), reason.trim())}>
+        <button className="approve" data-testid="override-submit" onClick={submit}>
           Submit override
         </button>
         <button className="ghost" onClick={props.onCancel}>

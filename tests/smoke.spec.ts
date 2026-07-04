@@ -7,7 +7,7 @@ const SHOT_DIR = process.env.SHOT_DIR || "test-results";
  * real Durable Object, WebSocket, and agent loop with no network. It requires the app to
  * expose the data-testid contract in the Cursor handoff (start-s1, speed-8x, advisory-card,
  * advisory-headline, advisory-action, advisory-learned, btn-why/override/approve, why-text,
- * override-target/reason/submit, simulated-badge, and rack-<id> with data-temp / data-projected).
+ * override-text/submit, simulated-badge, and rack-<id> with data-temp / data-projected).
  */
 test("S1: warns before throttle, learns the override, bends the curve", async ({ page }) => {
   test.setTimeout(60_000);
@@ -45,10 +45,10 @@ test("S1: warns before throttle, learns the override, bends the curve", async ({
   await expect(why).toBeVisible();
   await expect(why).toContainText(/\d/);
 
-  // Override: B3 has a firmware update the telemetry cannot know about
+  // Override in plain language: the model interprets the note into an exclude_rack B3 constraint
   await page.getByTestId("btn-override").click();
-  await page.getByTestId("override-target").fill("B3");
-  await page.getByTestId("override-reason").fill("firmware update in 10 min");
+  await page.getByTestId("override-text").fill("B3 has a firmware update in 10 min");
+  await page.screenshot({ path: SHOT_DIR + "/shot-override.png" });
   await page.getByTestId("override-submit").click();
 
   // the re-solved advisory shows the learned chip and does NOT target B3

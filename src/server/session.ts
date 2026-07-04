@@ -126,13 +126,7 @@ export class MarshalSession extends DurableObject<Env> {
         break;
       }
       case "override": {
-        const advisory = await this.agent.handleOverride(
-          this.sim,
-          this.session,
-          msg.advisory_id,
-          msg.reason,
-          msg.constraint,
-        );
+        const advisory = await this.agent.handleOverride(this.sim, this.session, msg.advisory_id, msg.text);
         this.broadcast({ type: "tick", state: this.world() });
         if (advisory) this.broadcast({ type: "advisory", advisory });
         break;

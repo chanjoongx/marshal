@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ServerMessageSchema } from "../shared/protocol";
 import type { ClientMessage } from "../shared/protocol";
-import type { Advisory, ConstraintKind, Resolution, WorldState } from "../shared/types";
+import type { Advisory, Resolution, WorldState } from "../shared/types";
 
 export interface SessionActions {
   startS1: () => void;
   setSpeed: (speed: 1 | 4 | 8) => void;
   approve: (id: string) => void;
-  override: (id: string, reason: string, constraint: { kind: ConstraintKind; target: string; reason: string }) => void;
+  override: (id: string, text: string) => void;
   dismiss: (id: string) => void;
   why: (id: string) => void;
 }
@@ -94,8 +94,7 @@ export function useSession(): Session {
     },
     setSpeed: (speed) => send({ type: "control", action: "set_speed", speed }),
     approve: (id) => send({ type: "control", action: "approve", advisory_id: id }),
-    override: (id, reason, constraint) =>
-      send({ type: "control", action: "override", advisory_id: id, reason, constraint }),
+    override: (id, text) => send({ type: "control", action: "override", advisory_id: id, text }),
     dismiss: (id) => send({ type: "control", action: "dismiss", advisory_id: id }),
     why: (id) => send({ type: "control", action: "why", advisory_id: id }),
   };
