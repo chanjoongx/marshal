@@ -16,7 +16,10 @@ export default {
       if (request.headers.get("Upgrade") !== "websocket") {
         return new Response("expected websocket", { status: 426 });
       }
-      const id = env.SESSION.idFromName("marshal-default");
+      // Isolate each client in its own Durable Object so concurrent viewers (for example two
+      // judges) never share or reset one another's world. The client passes a stable per-tab id.
+      const s = url.searchParams.get("s");
+      const id = env.SESSION.idFromName(s ? `marshal-${s}` : "marshal-default");
       return env.SESSION.get(id).fetch(request);
     }
 

@@ -22,6 +22,21 @@ export interface Session {
   actions: SessionActions;
 }
 
+/** A stable per-tab id so each browser tab gets its own isolated Durable Object session, and two
+ *  viewers (for example two judges on the live URL) never share or reset one another's world. */
+function sessionId(): string {
+  try {
+    let s = sessionStorage.getItem("marshal-session");
+    if (!s) {
+      s = crypto.randomUUID();
+      sessionStorage.setItem("marshal-session", s);
+    }
+    return s;
+  } catch {
+    return "default";
+  }
+}
+
 /** WebSocket client for the MarshalSession Durable Object. Validates every inbound frame. */
 export function useSession(): Session {
   const [connected, setConnected] = useState(false);
@@ -46,7 +61,7 @@ export function useSession(): Session {
 
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/api/ws`);
+      ws = new WebSocket(`${proto}://${location.host}/api/ws?s=${sessionId()}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
