@@ -245,7 +245,14 @@ export class Sim {
         const e = this.migrate(job_id, from_rack, to_rack, advisoryId);
         if (e) out.push(e);
       }
-      if (from_rack && cap_w != null) out.push(...this.cap(from_rack, cap_w, advisoryId));
+      // A migrate off an over-capacity rack must also relieve it. The real model names the cap
+      // in one_line but often omits the cap_w param, so always cap the source (SIM_SPEC section 6).
+      // cap() sheds only low-priority jobs and only until the projected margin clears nominal, so
+      // it is a no-op when the source is not over capacity.
+      if (from_rack) {
+        const src = this.rack(from_rack);
+        if (src) out.push(...this.cap(from_rack, cap_w ?? src.cap, advisoryId));
+      }
     } else if (action.type === "cap_intake") {
       const rackId = action.params.from_rack ?? action.params.to_rack;
       const capW = action.params.cap_w ?? (rackId ? this.rack(rackId)?.cap ?? 0 : 0);

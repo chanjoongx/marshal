@@ -114,6 +114,28 @@ describe("thermal model matches the curve_check oracle", () => {
 });
 
 describe("action effects on temperature", () => {
+  it("relieves the source to nominal even when the model omits cap_w (auto-cap on migrate)", () => {
+    const sim = new Sim();
+    sim.start("S1");
+    sim.advance(210);
+    expect(sim.getRackStates().find((r) => r.id === "B7")!.power_draw_w).toBe(P1); // 6300 W at surge
+
+    // A migrate with NO cap_w in params: the sim must still shed low-priority load to relieve B7.
+    sim.applyAction(
+      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15" }, one_line: "" },
+      "adv-test",
+    );
+
+    const afterAction = sim.getRackStates().find((r) => r.id === "B7")!;
+    expect(afterAction.power_draw_w).toBe(P1 - ACTION_REMOVE); // 3920 W: 700 migrated + 1680 shed
+    expect(afterAction.headroom_w).toBe(1750);
+
+    sim.advance(300);
+    const settled = sim.getRackStates().find((r) => r.id === "B7")!;
+    expect(settled.band).toBe("nominal");
+    expect(settled.projected_temp_5m).toBeLessThanOrEqual(69);
+  });
+
   it("approved migrate + cap removes 2380 W and matches the oracle with-action curve", () => {
     const sim = new Sim();
     sim.start("S1");
