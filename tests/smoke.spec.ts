@@ -11,6 +11,7 @@ const SHOT_DIR = process.env.SHOT_DIR || "test-results";
  */
 test("S1: warns before throttle, learns the override, bends the curve", async ({ page }) => {
   test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/");
 
   // start scenario S1 and run it fast

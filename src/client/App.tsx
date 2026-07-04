@@ -324,7 +324,7 @@ function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
   const W = 344;
   const H = 132;
   const padL = 8;
-  const padR = 44;
+  const padR = 26;
   const padT = 14;
   const padB = 18;
   const last = history[history.length - 1];
@@ -352,8 +352,8 @@ function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`temperature forecast for ${last.id}`}>
         <line className="throttle-line" x1={padL} y1={throttleY} x2={W - padR} y2={throttleY} />
-        <text className="axis-label throttle-text" x={W - padR + 4} y={throttleY + 3}>
-          {throttle}&deg; throttle
+        <text className="axis-label throttle-text" x={padL} y={throttleY - 5}>
+          {throttle}&deg; throttle line
         </text>
         <path className="temp-line" d={tempPath} fill="none" />
         <line className={`proj-line ${willCross ? "crossing" : "safe"}`} x1={nowX} y1={nowY} x2={projX} y2={projY} />
