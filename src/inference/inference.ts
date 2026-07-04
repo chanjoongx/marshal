@@ -21,6 +21,7 @@ import {
   type Advisory,
   type Action,
   type Job,
+  type RackState,
   type RiskClassification,
   type Snapshot,
 } from "../shared/types";
@@ -58,8 +59,8 @@ export function getProvider(env: InferenceEnv): Provider {
 
 /* --------------------------- shared pure helpers ----------------------------- */
 
-/** The model returns everything except the code-filled id/ts/origin. */
-export const AdvisoryDraftSchema = AdvisorySchema.omit({ id: true, ts: true, origin: true });
+/** The model returns everything except the code-filled id/ts/origin/rule_pick. */
+export const AdvisoryDraftSchema = AdvisorySchema.omit({ id: true, ts: true, origin: true, rule_pick: true });
 export type AdvisoryDraft = z.infer<typeof AdvisoryDraftSchema>;
 
 export const ClassifyResponseSchema = z.object({
@@ -108,10 +109,40 @@ export function validateAction(
 
   if (target.headroom_w < job.power_w)
     return { ok: false, reason: `target ${toRack} headroom ${target.headroom_w}W < job ${job.power_w}W` };
-  if (target.power_draw_w + job.power_w > SIM.RACK_POWER_BUDGET_W)
-    return { ok: false, reason: `target ${toRack} would exceed power budget ${SIM.RACK_POWER_BUDGET_W}W` };
+  if (target.power_draw_w + job.power_w > (target.power_budget_w ?? SIM.RACK_POWER_BUDGET_W))
+    return { ok: false, reason: `target ${toRack} would exceed power budget ${target.power_budget_w ?? SIM.RACK_POWER_BUDGET_W}W` };
+
+  // Co-location: the job must land on the rack hosting its partner, unless that rack is excluded.
+  if (job.co_located_with) {
+    const partnerRack = snapshot.racks.find((r) => r.active_jobs.some((j) => j.id === job.co_located_with));
+    const partnerExcluded =
+      !!partnerRack && snapshot.constraints.some((c) => c.kind === "exclude_rack" && c.target === partnerRack.id);
+    if (partnerRack && !partnerExcluded && toRack !== partnerRack.id)
+      return { ok: false, reason: `breaks co-location: ${jobId} must run with ${job.co_located_with} on ${partnerRack.id}` };
+  }
 
   return { ok: true };
+}
+
+/**
+ * What a naive headroom-only rule would pick, ignoring co-location. Used to show the
+ * "why not just rules" contrast: the greedy rule grabs the emptiest rack; the model reasons
+ * about the co-location dependency the rule ignores.
+ */
+export function naiveHeadroomPick(
+  snapshot: Snapshot,
+  focusId: string,
+  job: Job | undefined,
+): { rack: RackState; breaksColo: boolean } | null {
+  if (!job) return null;
+  const target = snapshot.racks
+    .filter((r) => r.id !== focusId)
+    .filter((r) => !snapshot.constraints.some((c) => c.kind === "exclude_rack" && c.target === r.id))
+    .filter((r) => r.headroom_w >= job.power_w)
+    .sort((a, b) => b.headroom_w - a.headroom_w)[0];
+  if (!target) return null;
+  const breaksColo = !!job.co_located_with && !target.active_jobs.some((j) => j.id === job.co_located_with);
+  return { rack: target, breaksColo };
 }
 
 /**
@@ -194,13 +225,27 @@ export function renderSnapshot(snapshot: Snapshot): string {
   lines.push(`CLUSTER: ${snapshot.cluster_note}`);
   lines.push(`FOCUS: ${snapshot.focus_rack_id ?? "none"}   TRIGGER: ${snapshot.trigger}`);
   lines.push("RACKS:");
-  lines.push("  id   temp  proj5m  ttt    headroom_w  band     util%  draw_w  jobs");
+  lines.push("  id   temp  proj5m  ttt    headroom_w  band     util%  draw_w  budget_w  jobs");
   for (const r of snapshot.racks) {
     const ttt = r.time_to_throttle_s === null ? "-" : `${Math.round(r.time_to_throttle_s)}s`;
-    const jobs = r.active_jobs.map((j) => `${j.id}(${j.priority},${j.power_w}W)`).join("; ");
+    const jobs = r.active_jobs
+      .map((j) => `${j.id}(${j.priority},${j.power_w}W${j.co_located_with ? ",co_located_with=" + j.co_located_with : ""})`)
+      .join("; ");
+    const budget = Math.round(r.power_budget_w ?? SIM.RACK_POWER_BUDGET_W);
     lines.push(
-      `  ${pad(r.id, 4)} ${pad(round(r.gpu_temp_c), 5)} ${pad(round(r.projected_temp_5m), 6)} ${pad(ttt, 6)} ${pad(Math.round(r.headroom_w), 10)}  ${pad(r.band, 8)} ${pad(Math.round(r.utilization_pct), 5)}  ${pad(Math.round(r.power_draw_w), 6)}  ${jobs}`,
+      `  ${pad(r.id, 4)} ${pad(round(r.gpu_temp_c), 5)} ${pad(round(r.projected_temp_5m), 6)} ${pad(ttt, 6)} ${pad(Math.round(r.headroom_w), 10)}  ${pad(r.band, 8)} ${pad(Math.round(r.utilization_pct), 5)}  ${pad(Math.round(r.power_draw_w), 6)}  ${pad(budget, 8)}  ${jobs}`,
     );
+  }
+  const deps: string[] = [];
+  for (const r of snapshot.racks)
+    for (const j of r.active_jobs)
+      if (j.co_located_with) {
+        const partner = snapshot.racks.find((x) => x.active_jobs.some((p) => p.id === j.co_located_with));
+        deps.push(`  - ${j.id} must co-locate with ${j.co_located_with}${partner ? " (currently on " + partner.id + ")" : ""}`);
+      }
+  if (deps.length) {
+    lines.push("DEPENDENCIES:");
+    lines.push(...deps);
   }
   const pending = snapshot.queue.pending.map((j) => `${j.id}(${j.priority},${j.power_w}W)`).join(", ") || "none";
   const recent = snapshot.queue.recent_placements.map((p) => `${p.job_id}->${p.rack_id}@${Math.round(p.ts)}s`).join(", ") || "none";
@@ -247,50 +292,51 @@ export class MockProvider implements Provider {
 
   async advise(snapshot: Snapshot): Promise<Advisory> {
     const focusId = snapshot.focus_rack_id ?? "B7";
-    const exclude = snapshot.constraints.find((c) => c.kind === "exclude_rack" && c.target === "B12");
+    const excludeB3 = snapshot.constraints.find((c) => c.kind === "exclude_rack" && c.target === "B3");
     const base = { id: `adv-${Math.round(snapshot.sim_time_s)}-${focusId}`, ts: snapshot.sim_time_s, origin: "model" as const };
 
-    // Second event: an A-row rack spikes after B7 is resolved; route around B12 automatically.
+    // Second event: an A-row rack spikes; apply the learned "avoid B3" rule automatically.
     if (focusId.startsWith("A")) {
       const job = focusJob(snapshot, focusId) ?? { id: "job-4820", power_w: 700, priority: "high" as const, sla: "" };
       return {
         ...base,
         severity: "warn",
         area: `row ${focusId[0]}`,
-        headline: `${focusId} projected to hit 84C throttle, routing around B12`,
-        rationale: `${focusId} is projected to reach ${round(snapshot.racks.find((r) => r.id === focusId)?.projected_temp_5m ?? 84)}C within 5 minutes with negative headroom. B12 stays excluded for maintenance, so ${focusId} offloads to B14 which has headroom.`,
-        action: { type: "migrate_job", params: { job_id: job.id, from_rack: focusId, to_rack: "B14", cap_w: 5670 }, one_line: `Migrate ${job.id} from ${focusId} to B14, avoid B12` },
+        headline: `${focusId} projected to hit 84C throttle, routing around B3`,
+        rationale: `${focusId} is projected to reach ${round(snapshot.racks.find((r) => r.id === focusId)?.projected_temp_5m ?? 84)}C within 5 minutes with negative headroom. B3 stays excluded for its firmware window, so ${focusId} offloads to B14 which has headroom.`,
+        action: { type: "migrate_job", params: { job_id: job.id, from_rack: focusId, to_rack: "B14", cap_w: 5670 }, one_line: `Migrate ${job.id} from ${focusId} to B14, avoid B3` },
         alternatives: [{ type: "cap_intake", params: { from_rack: focusId }, one_line: `Cap ${focusId} intake, shed low-priority jobs` }],
         confidence: 0.8,
-        learned_from: exclude ? exclude.id : null,
+        learned_from: excludeB3 ? excludeB3.id : null,
       };
     }
 
-    // B7 re-solve after the operator excluded B12.
-    if (exclude) {
+    // B7 re-solve after the operator excluded B3: co-location is no longer achievable, so with
+    // that constraint gone headroom is the right criterion and B15 (the emptiest rack) is correct.
+    if (excludeB3) {
       return {
         ...base,
         severity: "warn",
         area: "B7",
-        headline: "B12 excluded for maintenance, re-solving B7 to B15",
-        rationale: "B12 is excluded by your maintenance constraint, so B7 offloads to B15, which has 5400W headroom. Migrating job-4471 (700W) and capping B7 intake keeps B7 under its 5670W cooling capacity.",
-        action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "Migrate job-4471 to B15, move only low-priority jobs, cap B7" },
+        headline: "B3 excluded for firmware, co-location lost, re-solving B7 to B15",
+        rationale: "B3 is excluded by your firmware constraint, so job-4471 cannot co-locate with job-4470. With co-location no longer possible, B7 offloads to B15, the rack with the most headroom (5400W), and caps its intake.",
+        action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "Migrate job-4471 to B15 (co-location lost), cap B7 intake" },
         alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
-        confidence: 0.81,
-        learned_from: exclude.id,
+        confidence: 0.78,
+        learned_from: excludeB3.id,
       };
     }
 
-    // First WARN on B7, targets B12 (thermally fine; the operator will reveal it is in maintenance).
+    // First WARN on B7: co-locate job-4471 with job-4470 on B3, not the emptiest rack.
     return {
       ...base,
       severity: "warn",
       area: "B7",
-      headline: "B7 projected to hit 84C throttle in ~5 min, batch exceeds cooling",
-      rationale: "B7 is at 68.7C and projected to reach 84.5C within 5 minutes, time to throttle 279s. Its 6300W draw exceeds its 5670W cooling capacity by 630W.",
-      action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B12", cap_w: 5670 }, one_line: "Migrate job-4471 to B12 and cap B7 intake" },
+      headline: "B7 hits 84C throttle in ~5 min, migrate job-4471 to its partner on B3",
+      rationale: "B7 draw 6300W exceeds its 5670W cooling capacity by 630W, projected 84.5C in 279s. job-4471 must co-locate with job-4470 on B3, which has 3100W headroom, so it goes there rather than the emptiest rack.",
+      action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B3", cap_w: 5670 }, one_line: "Migrate job-4471 to B3 to join job-4470, cap B7 intake" },
       alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
-      confidence: 0.82,
+      confidence: 0.85,
       learned_from: null,
     };
   }
@@ -453,9 +499,10 @@ Rules:
 - Output ONLY minified JSON matching this schema, no prose, no markdown:
   {"severity":"watch|warn|critical","area":string,"headline":string(<=90 chars),"rationale":string(2 sentences, cite >=2 numbers from the snapshot),"action":{"type":"migrate_job|cap_intake|rebalance_row|hold|no_action","params":{"job_id"?:string,"from_rack"?:string,"to_rack"?:string,"cap_w"?:number,"row"?:string},"one_line":string(<=90 chars)},"alternatives":[up to 2 action objects],"confidence":number 0..1,"learned_from":string|null}
 - The action MUST satisfy every active constraint. Never target an excluded rack or an avoided row. Never move a pinned job.
-- The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget.
+- The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget (draw_w + job power <= budget_w).
+- CO-LOCATION: if the job has a co_located_with partner, migrate it to the rack HOSTING that partner, even if another rack has more headroom. Breaking co-location severely degrades the job, so never pick a rack just because it has the most headroom. If that rack is excluded by an operator constraint, pick the next-best feasible rack and say co-location could not be preserved.
 - If an operator-added constraint shaped your choice, set learned_from to that constraint id (e.g. "c1"). Otherwise null.
-- When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a rack with headroom to protect its SLA, and cap the source rack intake to shed low-priority load. Put both in one_line when both are needed, e.g. "Migrate job-4471 to B15 and cap B7 intake".
+- When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a feasible target and cap the source rack intake to shed low-priority load. State both in one_line when both are needed.
 - Terse operations English. No exclamation marks.`;
 
 export const WHY_SYSTEM = `You are Marshal explaining a recommendation to a shift engineer. In at most 3 sentences, justify the current advisory using ONLY numbers from the snapshot (current temp, projected temp, time to throttle, headroom). Cite specific values. Do NOT propose a new action or add new advice. Terse operations English, no exclamation marks.`;

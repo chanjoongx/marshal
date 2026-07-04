@@ -161,6 +161,15 @@ export class Sim {
       if (p === 7) {
         cap = B7_CAP;
         jobs = [job("job-7001", "normal", 3360, "resnet-152 training, steady")];
+      } else if (p === 3) {
+        // B3 hosts job-4470, the gradient partner that job-4471 must co-locate with. It runs
+        // moderately loaded (headroom 3100 W, less than the emptiest racks) so a headroom-only
+        // rule would never pick it, which is what makes the co-location the model's real job.
+        jobs = [
+          job("job-4470", "high", 900, "resnet training, gradient partner"),
+          job("ckpt-9", "low", 800, "checkpoint writer"),
+          job("b3-svc", "normal", 3300, "inference service"),
+        ];
       } else if (p === 12) {
         jobs = [job("job-b12", "normal", 3000, "inference service, low load")];
       } else if (p === 14) {
@@ -215,7 +224,10 @@ export class Sim {
       this.fired.add("surge");
       const b7 = this.rack("B7");
       if (b7) {
-        b7.jobs.push(job("job-4471", "high", 700, "batch inference, 2h window"));
+        b7.jobs.push({
+          ...job("job-4471", "high", 700, "distributed training, gradient exchange"),
+          co_located_with: "job-4470",
+        });
         for (let i = 1; i <= 4; i++) b7.jobs.push(job(`batch-${i}`, "low", 560, "batch training"));
       }
       this.placements.unshift({ job_id: "job-4471", rack_id: "B7", ts: t });
@@ -227,7 +239,10 @@ export class Sim {
       this.fired.add("arow");
       const a5 = this.rack("A5");
       if (a5) {
-        a5.jobs.push(job("job-4820", "high", 700, "vision inference, live"));
+        a5.jobs.push({
+          ...job("job-4820", "high", 700, "distributed training, gradient exchange"),
+          co_located_with: "job-4470",
+        });
         for (let i = 1; i <= 6; i++) a5.jobs.push(job(`abatch-${i}`, "low", 700, "batch training"));
       }
       this.placements.unshift({ job_id: "job-4820", rack_id: "A5", ts: t });
@@ -338,6 +353,7 @@ export class Sim {
       band: band(r.temp),
       utilization_pct: Math.min(100, Math.round((100 * power) / (SIM.GPUS_PER_RACK * SIM.GPU_TDP_W))),
       power_draw_w: Math.round(power),
+      power_budget_w: SIM.RACK_POWER_BUDGET_W,
       active_jobs: r.jobs,
     };
   }

@@ -128,6 +128,22 @@ describe("validateAction (action feasibility)", () => {
     expect(validateAction({ type: "cap_intake", params: { from_rack: "B7" }, one_line: "cap" }, snap).ok).toBe(true);
     expect(validateAction({ type: "hold", params: {}, one_line: "hold" }, snap).ok).toBe(true);
   });
+
+  it("rejects a migrate that breaks a co-location, accepts the one that preserves it", () => {
+    const coJob = { id: "job-4471", priority: "high" as const, power_w: 700, sla: "", co_located_with: "job-4470" };
+    const partner = { id: "job-4470", priority: "high" as const, power_w: 900, sla: "" };
+    const co = migrateJob({ params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15" }, one_line: "" });
+    const snap = snapshotWith([
+      rackState("B7", { active_jobs: [coJob], headroom_w: -630 }),
+      rackState("B3", { headroom_w: 3100, active_jobs: [partner] }),
+      rackState("B15", { headroom_w: 5400 }), // most headroom, but does not host the partner
+    ]);
+    const toB15 = validateAction(co, snap);
+    expect(toB15.ok).toBe(false); // greedy headroom pick breaks co-location
+    if (!toB15.ok) expect(toB15.reason).toContain("co-location");
+    const toB3 = validateAction({ ...co, params: { ...co.params, to_rack: "B3" } }, snap);
+    expect(toB3.ok).toBe(true); // B3 hosts the partner
+  });
 });
 
 /* ------------------------------ feasibility loop --------------------------- */
@@ -138,10 +154,10 @@ describe("agent feasibility loop", () => {
     sim.start("S1");
     sim.advance(120);
     const bad = migrateJob({ params: { job_id: "job-4471", from_rack: "B7", to_rack: "ZZ9" }, one_line: "bad" });
-    const good = migrateJob({ params: { job_id: "job-4471", from_rack: "B7", to_rack: "B12" }, one_line: "good" });
+    const good = migrateJob({ params: { job_id: "job-4471", from_rack: "B7", to_rack: "B3" }, one_line: "good" });
     const agent = new Agent(new ScriptedProvider([bad, good]));
     const advisory = await agent.solveAdvisory(sim, "B7", "band_cross", newSessionState());
-    expect(advisory.action.params.to_rack).toBe("B12");
+    expect(advisory.action.params.to_rack).toBe("B3");
     expect(advisory.origin).toBe("model");
   });
 
@@ -201,30 +217,34 @@ describe("advisory debounce", () => {
 /* ------------------------- the S1 override-learning path -------------------- */
 
 describe("S1 override and learning path (MockProvider)", () => {
-  it("warns on B7, learns the B12 exclusion, bends the curve, and routes around B12 next time", async () => {
+  it("co-locates on B3 not the greedy B15, learns the B3 exclusion, bends the curve, avoids B3 next time", async () => {
     const sim = new Sim();
     sim.start("S1");
     sim.advance(120);
     const agent = new Agent(new MockProvider());
     const session = newSessionState();
 
-    // 1. First WARN advisory targets B12 (thermally fine), no learned rule yet.
+    // 1. First WARN co-locates job-4471 with job-4470 on B3, and flags what a headroom rule does.
     const a1 = (await agent.tick(sim, session)).advisory!;
     expect(a1.headline).toContain("B7");
-    expect(a1.action.params.to_rack).toBe("B12");
+    expect(a1.action.params.to_rack).toBe("B3");
     expect(a1.learned_from).toBeNull();
+    expect(a1.rule_pick?.to_rack).toBe("B15"); // the greedy headroom pick
+    expect(a1.rule_pick?.flaw).toContain("co-location");
 
-    // 2. Override: exclude B12. Re-solve targets B15 and carries the learned rule.
-    const a2 = await agent.handleOverride(sim, session, a1.id, "in maintenance", {
+    // 2. Override: exclude B3 (firmware). Co-location is lost, so re-solve to B15, learned rule set.
+    const a2 = await agent.handleOverride(sim, session, a1.id, "firmware update in 10 min", {
       kind: "exclude_rack",
-      target: "B12",
-      reason: "in maintenance",
+      target: "B3",
+      reason: "firmware update in 10 min",
     });
     expect(a2).not.toBeNull();
     expect(a2!.action.params.to_rack).toBe("B15");
-    expect(a2!.action.one_line).toContain("B15");
-    expect(a2!.action.one_line).not.toContain("B12");
+    expect(a2!.action.params.to_rack).not.toBe("B3");
     expect(a2!.learned_from).toBe("c1");
+    expect(a2!.rule_pick).toBeUndefined(); // co-location no longer achievable -> no contrast
+    expect(a2!.origin).toBe("model"); // the re-solve comes from the model, not the fallback
+    expect(a1.origin).toBe("model");
     expect(session.records.find((r) => r.advisory.id === a1.id)!.outcome).toBe("overridden");
 
     // 3. Approve the re-solve: B7 projected temperature bends down.
@@ -233,11 +253,10 @@ describe("S1 override and learning path (MockProvider)", () => {
     const projAfter = sim.getRackStates().find((r) => r.id === "B7")!.projected_temp_5m;
     expect(projAfter).toBeLessThan(projBefore);
 
-    // 4. Second event: A-row spikes; the agent routes around B12 on its own, learned rule set.
+    // 4. Second event: A-row spikes with its own co-location on B3; the agent avoids B3 (learned).
     sim.advance(200); // past the A-row surge at t=300
     const a3 = (await agent.tick(sim, session)).advisory!;
-    expect(a3.action.params.to_rack).toBe("B14");
-    expect(a3.action.params.to_rack).not.toBe("B12");
+    expect(a3.action.params.to_rack).not.toBe("B3");
     expect(a3.learned_from).toBe("c1");
   });
 

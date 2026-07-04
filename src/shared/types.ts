@@ -45,6 +45,9 @@ export const JobSchema = z.object({
   power_w: z.number(), // heat contribution while running
   sla: z.string(), // human label, e.g. "batch inference, 2h window"
   dependencies: z.array(z.string()).optional(),
+  // A job that must run on the same rack as this one (gradient/data exchange). Moving this job
+  // away from its partner severely degrades it, so the migration target must host the partner.
+  co_located_with: z.string().optional(),
 });
 export type Job = z.infer<typeof JobSchema>;
 
@@ -76,6 +79,7 @@ export const RackStateSchema = z.object({
   band: ThermalBandSchema,
   utilization_pct: z.number(),
   power_draw_w: z.number(),
+  power_budget_w: z.number().optional(), // electrical ceiling; a migrate target must stay under it
   active_jobs: z.array(JobSchema),
 });
 export type RackState = z.infer<typeof RackStateSchema>;
@@ -162,6 +166,11 @@ export const AdvisorySchema = z.object({
   confidence: z.number().min(0).max(1),
   learned_from: z.string().nullable(), // constraint id if this reflects a learned rule
   origin: z.enum(["model", "auto"]), // model = Nemotron; auto = rule-based fallback
+  // What a naive headroom-only rule would have done, when it differs from the model's choice
+  // and would be wrong (e.g. breaks a co-location). Code-computed, for the "why not rules" contrast.
+  rule_pick: z
+    .object({ to_rack: z.string(), one_line: z.string(), flaw: z.string() })
+    .optional(),
 });
 export type Advisory = z.infer<typeof AdvisorySchema>;
 

@@ -17,7 +17,7 @@ import type {
   SnapshotTrigger,
   ThermalBand,
 } from "../shared/types";
-import { validateAction, ruleBasedAdvisory, type Provider } from "../inference/inference";
+import { validateAction, ruleBasedAdvisory, naiveHeadroomPick, type Provider } from "../inference/inference";
 import { Sim, band } from "./sim";
 
 const SEV_RANK: Record<ThermalBand, number> = { nominal: 0, watch: 1, warn: 2, critical: 3 };
@@ -144,7 +144,32 @@ export class Agent {
       const excl = snap.constraints.find((x) => x.source === "override" && x.kind === "exclude_rack");
       if (excl && out.action.params.to_rack !== excl.target) out = { ...out, learned_from: excl.id };
     }
+    const rp = this.computeRulePick(snap, out);
+    if (rp) out = { ...out, rule_pick: rp };
     return out;
+  }
+
+  /**
+   * The "why not just rules" contrast: what a headroom-only rule would pick, but only when it
+   * would break a co-location the model actually preserved (co-location achievable, partner rack
+   * not excluded, naive pick differs). Null the rest of the time, so the contrast is honest.
+   */
+  private computeRulePick(snap: Snapshot, advisory: Advisory): Advisory["rule_pick"] {
+    if (advisory.action.type !== "migrate_job") return undefined;
+    const focus = snap.racks.find((r) => r.id === snap.focus_rack_id);
+    const job = focus?.active_jobs.find((j) => j.id === advisory.action.params.job_id);
+    if (!job?.co_located_with) return undefined;
+    const partner = snap.racks.find((r) => r.active_jobs.some((j) => j.id === job.co_located_with));
+    const partnerExcluded =
+      !!partner && snap.constraints.some((c) => c.kind === "exclude_rack" && c.target === partner.id);
+    if (!partner || partnerExcluded) return undefined;
+    const naive = naiveHeadroomPick(snap, snap.focus_rack_id ?? "", job);
+    if (!naive || !naive.breaksColo || naive.rack.id === advisory.action.params.to_rack) return undefined;
+    return {
+      to_rack: naive.rack.id,
+      one_line: `Migrate ${job.id} to ${naive.rack.id} (most headroom, ${Math.round(naive.rack.headroom_w)}W)`,
+      flaw: `breaks ${job.id}'s co-location with ${job.co_located_with} on ${partner.id}`,
+    };
   }
 
   /* --------------------------------- controls -------------------------------- */
@@ -271,6 +296,12 @@ export class Agent {
     if (focusState) racks.set(focusState.id, focusState);
     for (const s of atRisk) racks.set(s.id, s);
     for (const s of candidates) racks.set(s.id, s);
+    // Always include the rack hosting a co-location partner of the focus's jobs, so the model can
+    // choose it even though its headroom keeps it out of the top candidates (that is the point).
+    const partnerIds = new Set(
+      (focusState?.active_jobs ?? []).flatMap((j) => (j.co_located_with ? [j.co_located_with] : [])),
+    );
+    for (const s of states) if (s.active_jobs.some((j) => partnerIds.has(j.id))) racks.set(s.id, s);
 
     return {
       sim_time_s: sim.simTime,
