@@ -94,7 +94,7 @@ One pod, two aisles, 24 racks total:
 - Aisle B (main GPU compute aisle): `B1`..`B15` (15 racks).
 - Aisle A (mixed aisle): `A1`..`A9` (9 racks).
 
-The aisles are intentionally different lengths so the demo's fixed rack IDs (B7, B12, B15)
+The aisles are intentionally different lengths so the demo's fixed rack IDs (B7, B3, B15)
 stay valid without renumbering. Real data-center rows vary in length, so this is credible.
 
 Each rack: `gpus = 8`, `power_budget_w = 12000`, `inlet_temp_c = 30`. Cooling capacity by
@@ -106,12 +106,20 @@ class:
   a shared batch surge.
 
 Nominal load: each rack carries jobs summing to a `power_draw_w` that puts it in the low 60s C.
-B7 nominal draw is `3360 W` -> steady state 62 C. Both B12 and B15 run light with real headroom
-to receive work: B12 draw `3000 W` (headroom `5100 W`, steady state 50 C), B14 draw `2850 W`
-(headroom `5250 W`), B15 draw `2700 W` (headroom `5400 W`, steady state 48 C). B15 has the most
-headroom and is furthest down the row from the hot B7, so in probe testing the live Nemotron
-model favors it; the deterministic MockProvider recommends B12 first and re-solves to B15. Either
-way the override-and-learn loop is identical.
+B7 nominal draw is `3360 W` -> steady state 62 C. Three B-row racks run light with real headroom
+to receive work: B12 draw `3000 W` (headroom `5100 W`), B14 draw `2850 W` (headroom `5250 W`),
+and B15 draw `2700 W` (headroom `5400 W`, the most headroom in the pod, steady state 48 C).
+
+B3 is the co-location host, and it is the reason the migration target is not just a headroom
+lookup. It runs three jobs: `job-4470` (high priority, 900 W, the gradient partner), `ckpt-9`
+(low, 800 W), and `b3-svc` (normal, 3300 W), a `5000 W` draw and `3100 W` headroom. That
+headroom is deliberately below B15's `5400 W`, so a headroom-only rule would never pick B3. When
+the surge job `job-4471` lands co-located with `job-4470` (section 6), the correct target is B3,
+not the emptiest rack, and reconciling that dependency is the model's real job. In probe testing
+the live Nemotron model picks B3 for the co-location (3/3 runs, `scripts/probe_reasoning.mjs`)
+and adapts to another rack once B3 is excluded; the deterministic MockProvider does the same,
+co-locating on B3 then re-solving to B15 after the override. Either way the override-and-learn
+loop is identical.
 
 ## 5. Determinism
 
@@ -132,9 +140,11 @@ DEMO_SCRIPT):
 - `t = 0..120s` nominal. Cluster note: "cluster nominal, B-row utilization climbing." B7 at
   62 C. All racks nominal.
 - `t = 120s` the scheduler places a heavy batch on B-row. On B7 this lands `job-4471` (high
-  priority, 700 W, a full-GPU inference job) plus 4 low-priority batch jobs at 560 W each
-  (2240 W). B7 heat power goes 3360 -> 6300 W. Its `headroom_w` goes +2310 -> -630 W: draw now
-  exceeds its 5670 W cooling capacity by 630 W, so it will heat toward a steady state of 90 C.
+  priority, 700 W, a distributed-training job with a co-location dependency: it must run on the
+  same rack as its gradient partner `job-4470`, which is on B3) plus 4 low-priority batch jobs at
+  560 W each (2240 W). B7 heat power goes 3360 -> 6300 W. Its `headroom_w` goes +2310 -> -630 W:
+  draw now exceeds its 5670 W cooling capacity by 630 W, so it will heat toward a steady state of
+  90 C.
 - Without action, B7 crosses 84 C at `t ~= 460s` (about 5.6 min after the surge). At the surge
   tick, `projected_temp_5m = 82.8 C` (warn) while `current_temp = 62 C` (nominal) and
   `time_to_throttle = 339 s`. The agent fires a WARN advisory here, roughly 5.6 minutes before
@@ -149,23 +159,29 @@ Action effects the sim MUST model, so approvals visibly bend the curve:
 - `cap_intake(rack, cap_w)`: caps further heat input on the rack and sheds its lowest-priority
   jobs one at a time until the rack's projected margin returns above the nominal threshold
   (15 C). It never sheds high-priority jobs; those are migrated, not dropped.
-- The demo's approved action on B7 is `migrate_job(job-4471 -> target)` plus `cap_intake(B7)`.
+- The demo's approved action on B7 is `migrate_job(job-4471 -> B15)` plus `cap_intake(B7)`.
   Migrating 4471 removes 700 W; the cap sheds 3 of the 4 low-priority batch jobs (1680 W).
   B7 heat power 6300 -> 3920 W, steady state -> 67 C, and the curve bends from ~71 C back down
   to 68 C nominal. It never throttles.
-- The agent recommends a headroom-rich target (the live model favors B15, the mock uses B12).
-  The operator overrides the recommended rack as in maintenance (an `exclude_rack` constraint),
-  and the agent re-solves to the other feasible target, which still has headroom (a healthy rack
-  receiving job-4471 settles around 54 C, well within nominal). The learned constraint persists
-  for every later advisory.
+- The first advisory migrates `job-4471` to B3 to preserve its co-location with `job-4470`, not
+  to the emptiest rack. Because B3's `3100 W` headroom is below B15's `5400 W`, a headroom-only
+  rule would grab B15 and break the gradient exchange; the advisory surfaces that contrast on
+  screen (code computes it with `naiveHeadroomPick`, only when the co-location was actually
+  achievable). The operator then overrides with something telemetry cannot see: B3 has a firmware
+  update in 10 minutes (an `exclude_rack B3` constraint). Co-location is now impossible, so the
+  agent re-solves to B15; with the dependency gone, headroom is the right criterion, and a
+  healthy rack receiving `job-4471` settles around 54 C, well within nominal. The learned
+  constraint persists for every later advisory (the UI shows a "learned: avoids B3" chip).
 
 Second pressure event (drives the second advisory that shows learning):
 
-- `t ~= 300s` (after B7 is resolved) a different aisle spikes: A-row racks `A4..A6` take a
-  surge. The best thermal target for the migration would again be a B-row rack; the agent must
-  route around `B12` on its own because the `exclude_rack B12` constraint is now active, and
-  the advisory carries `learned_from` set to that constraint (UI renders a "learned: avoids
-  maintenance racks" chip). It picks `B14` or `B15`, never B12, without being told again.
+- `t = 300s` (after B7 is resolved) a different aisle spikes: `A5` takes a surge whose
+  high-priority job `job-4820` ALSO co-locates with `job-4470` on B3. But B3 is excluded now, so
+  the agent avoids B3 on its own and picks another feasible rack (the mock uses B14), carrying
+  the same `learned_from` chip without being told again. This is the learning proof: an operator
+  rule added mid-incident reshapes the next decision. Because the co-location partner is on an
+  excluded rack, no rule-vs-model contrast is shown here (the model had no better co-location to
+  reach for), which keeps that contrast honest.
 
 ### Validated B7 curve (from `scripts/curve_check.mjs`, TAU=220)
 
