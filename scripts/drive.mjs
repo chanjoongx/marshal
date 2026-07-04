@@ -83,14 +83,9 @@ function onAdvisory(a) {
     log(`=== FIRST ADVISORY (origin=${a.origin}) ===`);
     printAdvisory(a);
     phase = "await_resolve";
-    log(`Operator override: excluding ${excluded} as "in maintenance"`);
-    send({
-      type: "control",
-      action: "override",
-      advisory_id: a.id,
-      reason: "in maintenance",
-      constraint: { kind: "exclude_rack", target: excluded, reason: "in maintenance" },
-    });
+    const note = `${excluded} has a firmware update in 10 min`;
+    log(`Operator override (plain language): "${note}" — model must interpret this into exclude_rack ${excluded}`);
+    send({ type: "control", action: "override", advisory_id: a.id, text: note });
   } else if (phase === "await_resolve" && a.id !== firstAdv.id) {
     log(`=== RE-SOLVE ADVISORY (origin=${a.origin}) ===`);
     printAdvisory(a);
