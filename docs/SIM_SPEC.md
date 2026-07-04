@@ -106,8 +106,12 @@ class:
   a shared batch surge.
 
 Nominal load: each rack carries jobs summing to a `power_draw_w` that puts it in the low 60s C.
-B7 nominal draw is `3360 W` -> steady state 62 C. Migration-target racks (B12, B15) run light
-(draw ~2700-3000 W, steady state ~48-50 C) so they have real headroom to receive work.
+B7 nominal draw is `3360 W` -> steady state 62 C. Both B12 and B15 run light with real headroom
+to receive work (B12 draw `2600 W`, headroom `5500 W`, steady state 47 C; B15 draw `3000 W`,
+headroom `5100 W`, steady state 50 C). Either is a valid migration target. In probe testing the
+live Nemotron model favors B15, the rack furthest down the row from the hot B7 (better thermal
+isolation); the deterministic MockProvider recommends B12. The demo's value is the
+override-and-learn loop, which is identical whichever rack is recommended first.
 
 ## 5. Determinism
 
@@ -149,9 +153,11 @@ Action effects the sim MUST model, so approvals visibly bend the curve:
   Migrating 4471 removes 700 W; the cap sheds 3 of the 4 low-priority batch jobs (1680 W).
   B7 heat power 6300 -> 3920 W, steady state -> 67 C, and the curve bends from ~71 C back down
   to 68 C nominal. It never throttles.
-- First-choice target is `B12` (healthy, ample headroom). When the operator overrides with
-  "B12 in maintenance" (an `exclude_rack` constraint), the agent re-solves to `B15` (draw
-  2700 -> 3400 W, steady state 52.7 C, headroom 4700 W, stays nominal).
+- The agent recommends a headroom-rich target (the live model favors B15, the mock uses B12).
+  The operator overrides the recommended rack as in maintenance (an `exclude_rack` constraint),
+  and the agent re-solves to the other feasible target, which still has headroom (a healthy rack
+  receiving job-4471 settles around 54 C, well within nominal). The learned constraint persists
+  for every later advisory.
 
 Second pressure event (drives the second advisory that shows learning):
 

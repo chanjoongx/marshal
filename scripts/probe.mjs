@@ -66,7 +66,8 @@ Rules:
   {"severity":"watch|warn|critical","area":string,"headline":string,"rationale":string,"action":{"type":"migrate_job|cap_intake|rebalance_row|hold|no_action","params":{"job_id"?:string,"from_rack"?:string,"to_rack"?:string,"cap_w"?:number,"row"?:string},"one_line":string},"alternatives":[up to 2 action objects],"confidence":number 0..1,"learned_from":string|null}
 - The action MUST satisfy every active constraint. Never target an excluded rack. Never move a pinned job.
 - The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget.
-- If an operator-added constraint shaped your choice, set learned_from to that constraint id. Otherwise null.
+- If an operator-added constraint shaped your choice, set learned_from to that constraint id (e.g. "c1"). Otherwise null.
+- When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a rack with headroom to protect its SLA, and cap the source rack intake to shed low-priority load. Put both in one_line when both are needed, e.g. "Migrate job-4471 to B15 and cap B7 intake".
 - Terse operations English. No exclamation marks.`;
 
 const CLASSIFY_SYSTEM = `You triage GPU rack thermal risk. For each rack in the snapshot, classify risk as "nominal", "elevated", or "at_risk" based on its projected temperature and headroom. Output ONLY minified JSON: {"classifications":[{"rack_id":string,"risk":"nominal|elevated|at_risk"}]}. No prose.`;
@@ -77,8 +78,8 @@ FOCUS: B7   TRIGGER: band_cross
 RACKS:
   id   temp  proj5m  ttt    headroom_w  band     util%  draw_w  jobs
   B7   68.7  84.5    279s   -630        nominal  95     6300    job-4471(high,700W); batch-1(low,560W); batch-2(low,560W); batch-3(low,560W)
-  B12  50.0  50.2    -      +5100       nominal  40     3000    svc-2201(normal,900W)
-  B15  48.0  48.1    -      +5400       nominal  36     2700    svc-3300(normal,900W)
+  B12  47.3  47.5    -      +5500       nominal  32     2600    svc-2201(normal,900W)
+  B15  50.0  50.2    -      +5100       nominal  40     3000    svc-3300(normal,900W)
 QUEUE: pending=[]; recent=[job-4471->B7@120s]`;
 const SNAP_NO_CONSTRAINT = SNAP_BASE + `\nCONSTRAINTS: none`;
 const SNAP_EXCLUDE_B12 =

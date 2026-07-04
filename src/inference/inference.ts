@@ -273,7 +273,7 @@ export class MockProvider implements Provider {
         severity: "warn",
         area: "B7",
         headline: "B12 excluded for maintenance, re-solving B7 to B15",
-        rationale: "B12 is excluded by your maintenance constraint, so B7 offloads to B15, which has 4700W headroom. Migrating job-4471 (700W) and capping B7 intake keeps B7 under its 5670W cooling capacity.",
+        rationale: "B12 is excluded by your maintenance constraint, so B7 offloads to B15, which has 5100W headroom. Migrating job-4471 (700W) and capping B7 intake keeps B7 under its 5670W cooling capacity.",
         action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "Migrate job-4471 to B15, move only low-priority jobs, cap B7" },
         alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
         confidence: 0.81,
@@ -455,7 +455,8 @@ Rules:
 - The action MUST satisfy every active constraint. Never target an excluded rack or an avoided row. Never move a pinned job.
 - The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget.
 - If an operator-added constraint shaped your choice, set learned_from to that constraint id (e.g. "c1"). Otherwise null.
-- Terse operations English. No exclamation marks. Prefer migrating high-priority jobs and shedding or capping low-priority load.`;
+- When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a rack with headroom to protect its SLA, and cap the source rack intake to shed low-priority load. Put both in one_line when both are needed, e.g. "Migrate job-4471 to B15 and cap B7 intake".
+- Terse operations English. No exclamation marks.`;
 
 export const WHY_SYSTEM = `You are Marshal explaining a recommendation to a shift engineer. In at most 3 sentences, justify the current advisory using ONLY numbers from the snapshot (current temp, projected temp, time to throttle, headroom). Cite specific values. Do NOT propose a new action or add new advice. Terse operations English, no exclamation marks.`;
 

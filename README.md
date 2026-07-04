@@ -51,8 +51,20 @@ Worker, thinking disabled for structured output:
 - `deepseek-ai/Deepseek-V4-Flash` does cheap per-rack risk classification so the heavy model
   fires rarely.
 
-Probe results (latency, JSON reliability, final request shape) recorded here after
-`npm run probe`.
+Verified against the live endpoint with `npm run probe` (8/8 checks pass):
+
+- Both model strings resolve as written: `nvidia/NVIDIA-Nemotron-3-Ultra-550B` and
+  `deepseek-ai/Deepseek-V4-Flash`.
+- Thinking disabled via a top-level `chat_template_kwargs` field (`enable_thinking:false` for
+  Nemotron, `thinking:false` for DeepSeek). No reasoning leaked into content.
+- Structured JSON via `response_format: {type:"json_object"}` validates against our Advisory
+  zod schema on Nemotron Ultra; no json_schema-strict fallback was needed.
+- Constraint reconciliation works on the real model: excluding a rack makes the advisory route
+  to a different rack and set `learned_from`.
+- Latency: classification ~0.8-1.1s, advisory ~2.5-4.6s, Why ~0.9-1.2s.
+
+The exact request shape and error rules are in docs/CRUSOE_NOTES.md; the provider is in
+src/inference/inference.ts.
 
 ## Track and bonus
 
