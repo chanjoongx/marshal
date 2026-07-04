@@ -107,11 +107,11 @@ class:
 
 Nominal load: each rack carries jobs summing to a `power_draw_w` that puts it in the low 60s C.
 B7 nominal draw is `3360 W` -> steady state 62 C. Both B12 and B15 run light with real headroom
-to receive work (B12 draw `2600 W`, headroom `5500 W`, steady state 47 C; B15 draw `3000 W`,
-headroom `5100 W`, steady state 50 C). Either is a valid migration target. In probe testing the
-live Nemotron model favors B15, the rack furthest down the row from the hot B7 (better thermal
-isolation); the deterministic MockProvider recommends B12. The demo's value is the
-override-and-learn loop, which is identical whichever rack is recommended first.
+to receive work: B12 draw `3000 W` (headroom `5100 W`, steady state 50 C), B14 draw `2850 W`
+(headroom `5250 W`), B15 draw `2700 W` (headroom `5400 W`, steady state 48 C). B15 has the most
+headroom and is furthest down the row from the hot B7, so in probe testing the live Nemotron
+model favors it; the deterministic MockProvider recommends B12 first and re-solves to B15. Either
+way the override-and-learn loop is identical.
 
 ## 5. Determinism
 

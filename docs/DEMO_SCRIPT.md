@@ -58,8 +58,8 @@ Engineer taps `Override` and adds a constraint the telemetry cannot know:
 
 ### 30-45s  Reconcile, re-solve, Approve, curve bends
 Marshal injects the constraint and re-solves in seconds. A new advisory replaces the old:
-- headline: `B15 excluded for maintenance, re-solving B7 to B12`
-- action line: `Migrate job-4471 to B12, move only low-priority jobs, cap B7`
+- headline: `B15 excluded for maintenance, re-solving B7 to B14`
+- action line: `Migrate job-4471 to B14, move only low-priority jobs, cap B7`
 - learned chip on the card: `learned: avoids maintenance racks`
 Engineer taps `Approve`. The target rack lights up in the heatmap. B7's projected-temp line
 visibly bends down and away from the 84C throttle line (projection falls toward ~67C).
@@ -69,7 +69,7 @@ A different aisle spikes: A-row (A4-A6) takes a surge. The new advisory carries 
 `learned: avoids maintenance racks` chip and routes around the excluded rack on its own, without
 being told again:
 - headline: `A5 projected to hit 84C throttle, routing around the maintenance rack`
-- action line: `Migrate job-4820 from A5 to B14`
+- action line: `Migrate job-4820 from A5 to B12`
 Engineer taps `Approve`.
 
 ### 55-60s  Resolution

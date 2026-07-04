@@ -273,7 +273,7 @@ export class MockProvider implements Provider {
         severity: "warn",
         area: "B7",
         headline: "B12 excluded for maintenance, re-solving B7 to B15",
-        rationale: "B12 is excluded by your maintenance constraint, so B7 offloads to B15, which has 5100W headroom. Migrating job-4471 (700W) and capping B7 intake keeps B7 under its 5670W cooling capacity.",
+        rationale: "B12 is excluded by your maintenance constraint, so B7 offloads to B15, which has 5400W headroom. Migrating job-4471 (700W) and capping B7 intake keeps B7 under its 5670W cooling capacity.",
         action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "Migrate job-4471 to B15, move only low-priority jobs, cap B7" },
         alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
         confidence: 0.81,
