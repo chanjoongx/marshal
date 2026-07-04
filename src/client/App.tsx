@@ -61,7 +61,7 @@ export function App() {
 
       <div className="controls">
         <button className="primary" data-testid="start-s1" onClick={actions.startS1}>
-          Start S1 — batch surge
+          Start S1 - batch surge
         </button>
         <div className="speeds">
           <span className="lbl">speed</span>
@@ -186,7 +186,7 @@ function AdvisoryCard(props: {
         <div className="rule-pick" data-testid="advisory-rule-pick">
           <span className="rp-label">a headroom-only rule would</span>
           <span className="rp-body">
-            {advisory.rule_pick.one_line} — {advisory.rule_pick.flaw}
+            {advisory.rule_pick.one_line} - {advisory.rule_pick.flaw}
           </span>
         </div>
       ) : null}
@@ -291,13 +291,13 @@ function Heatmap(props: { world: WorldState | null }) {
           {s.racks_total} racks · watch {s.racks_watch} · warn {s.racks_warn} · critical {s.racks_critical}
         </div>
       ) : null}
-      <div className="aisle-label">Aisle B — GPU compute</div>
+      <div className="aisle-label">Aisle B - GPU compute</div>
       <div className="grid grid-b">
         {rowB.map((r) => (
           <RackCell key={r.id} rack={r} />
         ))}
       </div>
-      <div className="aisle-label">Aisle A — mixed</div>
+      <div className="aisle-label">Aisle A - mixed</div>
       <div className="grid grid-a">
         {rowA.map((r) => (
           <RackCell key={r.id} rack={r} />

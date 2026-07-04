@@ -212,7 +212,7 @@ export class Agent {
     this.clearPending(focusId);
     session.timeline.push({
       ts: sim.simTime,
-      label: constraint ? `override: ${constraint.kind} ${constraint.target} — ${text}` : `override: ${text}`,
+      label: constraint ? `override: ${constraint.kind} ${constraint.target} (${text})` : `override: ${text}`,
     });
 
     const advisory = await this.solveAdvisory(sim, focusId, "override", session);
