@@ -33,14 +33,14 @@ const band = (t) => {
 };
 
 // --- B7: the marginal-cooling hero rack ---
-const B7_CAP = 5670; // heat removal at delta-T 54 == 105 W/C conductance
-const P0 = 3360; // nominal draw -> steady-state 62 C
-const SURGE = 2940; // job-4471 (high, 700 W) + 4 batch jobs (560 W each = 2240)
-const P1 = P0 + SURGE; // 6300 -> steady-state 90 C
+const B7_CAP = 11340; // heat removal at delta-T 54 == 210 W/C conductance
+const P0 = 6720; // nominal draw -> steady-state 62 C
+const SURGE = 5880; // job-4471 (high, 1400 W) + 4 batch jobs (1120 W each = 4480)
+const P1 = P0 + SURGE; // 12600 -> steady-state 90 C
 
 const SURGE_T = 120; // batch lands at t+2m
 const ACTION_T = 210; // operator approves ~90 s after surge
-const ACTION_REMOVE = 2380; // migrate 4471 (700) + cap sheds 3 low-pri batch (1680)
+const ACTION_REMOVE = 4760; // migrate 4471 (1400) + cap sheds 3 low-pri batch (3360)
 
 function run(withAction) {
   let T = steadyState(P0, B7_CAP);
@@ -91,9 +91,9 @@ table("S1 without action (B7):", noAction.rows);
 table("S1 with action at t=210 (B7):", action.rows);
 
 // migration target B15: healthy cooling, low load, receives job-4471 (700 W)
-const B15_CAP = 8100; // 150 W/C
-const B15_P0 = 3000; // steady-state ~50 C (B15 is the second-best target, after B12)
-const B15_after = B15_P0 + 700;
+const B15_CAP = 16200; // 300 W/C
+const B15_P0 = 6000; // steady-state ~50 C
+const B15_after = B15_P0 + 1400;
 const B15_Tss_after = steadyState(B15_after, B15_CAP);
 console.log(
   `\nB15 target after receiving job-4471: draw ${B15_after} W, steady-state ${B15_Tss_after.toFixed(1)} C, headroom ${headroom(B15_after, B15_CAP)} W, band ${band(B15_Tss_after)}`,

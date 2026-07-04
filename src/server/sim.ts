@@ -77,16 +77,16 @@ export function mulberry32(seed: number): () => number {
 
 /* ----------------------------------- topology -------------------------------- */
 
-const HEALTHY_CAP = 8100; // 150 W/C conductance (healthy racks)
-const B7_CAP = 5670; // 105 W/C: the marginal-cooling hero rack, restricted airflow
+const HEALTHY_CAP = 16200; // 300 W/C conductance, ~16 kW heat removal at the throttle delta-T
+const B7_CAP = 11340; // 210 W/C: the marginal-cooling hero rack (restricted airflow), ~11 kW
 
 interface SimRack {
   id: string;
   row: string;
   position: number;
   cap: number;
-  temp: number; // current junction temp
-  jobs: Job[]; // power_draw_w == sum of job power_w
+  temp: number; // current rack package temperature (heatsink + coolant thermal mass, tau ~220s)
+  jobs: Job[]; // power_draw_w == sum of job power_w (total rack electrical power, all -> heat)
   inlet: number; // cosmetic, seeded jitter around INLET_TEMP_C
   capped: boolean;
   capW: number | null;
@@ -160,24 +160,24 @@ export class Sim {
       let jobs: Job[];
       if (p === 7) {
         cap = B7_CAP;
-        jobs = [job("job-7001", "normal", 3360, "resnet-152 training, steady")];
+        jobs = [job("job-7001", "normal", 6720, "resnet-152 training, steady")];
       } else if (p === 3) {
         // B3 hosts job-4470, the gradient partner that job-4471 must co-locate with. It runs
-        // moderately loaded (headroom 3100 W, less than the emptiest racks) so a headroom-only
+        // moderately loaded (headroom 6200 W, less than the emptiest racks) so a headroom-only
         // rule would never pick it, which is what makes the co-location the model's real job.
         jobs = [
-          job("job-4470", "high", 900, "resnet training, gradient partner"),
-          job("ckpt-9", "low", 800, "checkpoint writer"),
-          job("b3-svc", "normal", 3300, "inference service"),
+          job("job-4470", "high", 1800, "resnet training, gradient partner"),
+          job("ckpt-9", "low", 1600, "checkpoint writer"),
+          job("b3-svc", "normal", 6600, "inference service"),
         ];
       } else if (p === 12) {
-        jobs = [job("job-b12", "normal", 3000, "inference service, low load")];
+        jobs = [job("job-b12", "normal", 6000, "inference service, low load")];
       } else if (p === 14) {
-        jobs = [job("job-b14", "normal", 2850, "inference service, low load")];
+        jobs = [job("job-b14", "normal", 5700, "inference service, low load")];
       } else if (p === 15) {
-        jobs = [job("job-b15", "normal", 2700, "inference service, low load")];
+        jobs = [job("job-b15", "normal", 5400, "inference service, low load")];
       } else {
-        jobs = [job(`job-b${p}`, "normal", 4600 + ((p * 60) % 300), "training shard")];
+        jobs = [job(`job-b${p}`, "normal", 9200 + ((p * 120) % 600), "training shard")];
       }
       racks.push(mk("B", p, cap, jobs));
     }
@@ -186,8 +186,8 @@ export class Sim {
     for (let p = 1; p <= 9; p++) {
       const jobs =
         p === 5
-          ? [job("job-a5", "normal", 4200, "batch inference, steady")]
-          : [job(`job-a${p}`, "normal", 4300 + ((p * 70) % 280), "batch inference")];
+          ? [job("job-a5", "normal", 8400, "batch inference, steady")]
+          : [job(`job-a${p}`, "normal", 8600 + ((p * 140) % 560), "batch inference")];
       racks.push(mk("A", p, HEALTHY_CAP, jobs));
     }
 
@@ -219,19 +219,19 @@ export class Sim {
   private applyEvents(t: number): void {
     if (this.scenario !== "S1") return;
 
-    // Batch surge on B-row: B7's draw goes 3360 -> 6300, headroom +2310 -> -630.
+    // Batch surge on B-row: B7's draw goes 6720 -> 12600, headroom +4620 -> -1260.
     if (t === 120 && !this.fired.has("surge")) {
       this.fired.add("surge");
       const b7 = this.rack("B7");
       if (b7) {
         b7.jobs.push({
-          ...job("job-4471", "high", 700, "distributed training, gradient exchange"),
+          ...job("job-4471", "high", 1400, "distributed training, gradient exchange"),
           co_located_with: "job-4470",
         });
-        for (let i = 1; i <= 4; i++) b7.jobs.push(job(`batch-${i}`, "low", 560, "batch training"));
+        for (let i = 1; i <= 4; i++) b7.jobs.push(job(`batch-${i}`, "low", 1120, "batch training"));
       }
       this.placements.unshift({ job_id: "job-4471", rack_id: "B7", ts: t });
-      this.pending = [{ ...job("job-5540", "low", 560, "batch training"), target_hint: "B-row" }];
+      this.pending = [{ ...job("job-5540", "low", 1120, "batch training"), target_hint: "B-row" }];
     }
 
     // Second event: A-row spikes after B7 is resolved (drives the learning advisory).
@@ -240,10 +240,10 @@ export class Sim {
       const a5 = this.rack("A5");
       if (a5) {
         a5.jobs.push({
-          ...job("job-4820", "high", 700, "distributed training, gradient exchange"),
+          ...job("job-4820", "high", 1400, "distributed training, gradient exchange"),
           co_located_with: "job-4470",
         });
-        for (let i = 1; i <= 6; i++) a5.jobs.push(job(`abatch-${i}`, "low", 700, "batch training"));
+        for (let i = 1; i <= 6; i++) a5.jobs.push(job(`abatch-${i}`, "low", 1400, "batch training"));
       }
       this.placements.unshift({ job_id: "job-4820", rack_id: "A5", ts: t });
     }
@@ -351,7 +351,7 @@ export class Sim {
       time_to_throttle_s: ttt === null ? null : Math.round(ttt),
       headroom_w: Math.round(headroomW(power, r.cap)),
       band: band(r.temp),
-      utilization_pct: Math.min(100, Math.round((100 * power) / (SIM.GPUS_PER_RACK * SIM.GPU_TDP_W))),
+      utilization_pct: Math.round((100 * power) / r.cap), // cooling load: draw as a % of heat-removal capacity
       power_draw_w: Math.round(power),
       power_budget_w: SIM.RACK_POWER_BUDGET_W,
       active_jobs: r.jobs,

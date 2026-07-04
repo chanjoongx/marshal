@@ -14,10 +14,10 @@ function rackState(id: string, over: Partial<RackState> = {}): RackState {
     gpu_temp_c: 60,
     projected_temp_5m: 60,
     time_to_throttle_s: null,
-    headroom_w: 5000,
+    headroom_w: 10000,
     band: "nominal",
     utilization_pct: 50,
-    power_draw_w: 3000,
+    power_draw_w: 6000,
     active_jobs: [],
     ...over,
   };
@@ -59,7 +59,7 @@ class ScriptedProvider implements Provider {
       severity: "warn",
       area: snapshot.focus_rack_id ?? "B7",
       headline: "stub advisory",
-      rationale: "B7 at 68 C, headroom -630 W.",
+      rationale: "B7 at 68 C, headroom -1260 W.",
       action,
       alternatives: [],
       confidence: 0.8,
@@ -75,17 +75,17 @@ class ScriptedProvider implements Provider {
 /* ----------------------------- validateAction ------------------------------ */
 
 describe("validateAction (action feasibility)", () => {
-  const job = { id: "job-4471", priority: "high" as const, power_w: 700, sla: "" };
-  const focus = rackState("B7", { active_jobs: [job], headroom_w: -630, power_draw_w: 6300 });
+  const job = { id: "job-4471", priority: "high" as const, power_w: 1400, sla: "" };
+  const focus = rackState("B7", { active_jobs: [job], headroom_w: -1260, power_draw_w: 12600 });
 
   it("accepts a migrate to a rack with headroom and no constraint", () => {
-    const snap = snapshotWith([focus, rackState("B12", { headroom_w: 5100, power_draw_w: 3000 })]);
+    const snap = snapshotWith([focus, rackState("B12", { headroom_w: 10200, power_draw_w: 6000 })]);
     expect(validateAction(migrateJob(), snap)).toEqual({ ok: true });
   });
 
   it("rejects a migrate onto an excluded rack", () => {
     const snap = snapshotWith(
-      [focus, rackState("B12", { headroom_w: 5100 })],
+      [focus, rackState("B12", { headroom_w: 10200 })],
       [{ id: "c1", kind: "exclude_rack", target: "B12", reason: "maintenance", ts: 100, source: "override" }],
     );
     const res = validateAction(migrateJob(), snap);
@@ -95,7 +95,7 @@ describe("validateAction (action feasibility)", () => {
 
   it("rejects a migrate onto an avoided row", () => {
     const snap = snapshotWith(
-      [focus, rackState("B12", { headroom_w: 5100 })],
+      [focus, rackState("B12", { headroom_w: 10200 })],
       [{ id: "c2", kind: "avoid_row", target: "B", reason: "row maintenance", ts: 100, source: "operator" }],
     );
     expect(validateAction(migrateJob(), snap).ok).toBe(false);
@@ -103,7 +103,7 @@ describe("validateAction (action feasibility)", () => {
 
   it("rejects moving a pinned job", () => {
     const snap = snapshotWith(
-      [focus, rackState("B12", { headroom_w: 5100 })],
+      [focus, rackState("B12", { headroom_w: 10200 })],
       [{ id: "c3", kind: "pin_job", target: "job-4471", reason: "do not move", ts: 100, source: "operator" }],
     );
     expect(validateAction(migrateJob(), snap).ok).toBe(false);
@@ -117,7 +117,7 @@ describe("validateAction (action feasibility)", () => {
   });
 
   it("rejects a target that would exceed the power budget", () => {
-    const snap = snapshotWith([focus, rackState("B12", { headroom_w: 700, power_draw_w: 11500 })]);
+    const snap = snapshotWith([focus, rackState("B12", { headroom_w: 1500, power_draw_w: 23000 })]);
     const res = validateAction(migrateJob(), snap);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toContain("budget");
@@ -130,13 +130,13 @@ describe("validateAction (action feasibility)", () => {
   });
 
   it("rejects a migrate that breaks a co-location, accepts the one that preserves it", () => {
-    const coJob = { id: "job-4471", priority: "high" as const, power_w: 700, sla: "", co_located_with: "job-4470" };
-    const partner = { id: "job-4470", priority: "high" as const, power_w: 900, sla: "" };
+    const coJob = { id: "job-4471", priority: "high" as const, power_w: 1400, sla: "", co_located_with: "job-4470" };
+    const partner = { id: "job-4470", priority: "high" as const, power_w: 1800, sla: "" };
     const co = migrateJob({ params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15" }, one_line: "" });
     const snap = snapshotWith([
-      rackState("B7", { active_jobs: [coJob], headroom_w: -630 }),
-      rackState("B3", { headroom_w: 3100, active_jobs: [partner] }),
-      rackState("B15", { headroom_w: 5400 }), // most headroom, but does not host the partner
+      rackState("B7", { active_jobs: [coJob], headroom_w: -1260 }),
+      rackState("B3", { headroom_w: 6200, active_jobs: [partner] }),
+      rackState("B15", { headroom_w: 10800 }), // most headroom, but does not host the partner
     ]);
     const toB15 = validateAction(co, snap);
     expect(toB15.ok).toBe(false); // greedy headroom pick breaks co-location
@@ -243,8 +243,8 @@ describe("S1 override and learning path (MockProvider)", () => {
     expect(a2!.action.params.to_rack).not.toBe("B3");
     expect(a2!.learned_from).toBe("c1");
     expect(a2!.rule_pick).toBeUndefined(); // co-location no longer achievable -> no contrast
-    expect(a2!.origin).toBe("model"); // the re-solve comes from the model, not the fallback
-    expect(a1.origin).toBe("model");
+    expect(a2!.origin).toBe("mock"); // the re-solve is the offline mock, not the auto fallback
+    expect(a1.origin).toBe("mock");
     expect(session.records.find((r) => r.advisory.id === a1.id)!.outcome).toBe("overridden");
 
     // 3. Approve the re-solve: B7 projected temperature bends down.

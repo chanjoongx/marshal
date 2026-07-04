@@ -19,7 +19,7 @@ export const SIM = {
   INLET_TEMP_C: 30, // cold-aisle / coolant inlet reference
   THROTTLE_TEMP_C: 84, // GPU junction thermal-throttle onset
   THERMAL_TAU_S: 220, // first-order thermal time constant, tuned via scripts/curve_check.mjs (see SIM_SPEC)
-  RACK_POWER_BUDGET_W: 12000, // per-rack electrical ceiling
+  RACK_POWER_BUDGET_W: 24000, // per-rack electrical ceiling (total rack power, all -> heat)
   PROJECTION_HORIZON_S: 300, // 5-minute predictive lookahead
   BAND_WATCH_MARGIN_C: 15, // projected margin to throttle: > 15 => nominal
   BAND_WARN_MARGIN_C: 5, // 5..15 => watch, 0..5 => warn, <= 0 => critical
@@ -165,7 +165,8 @@ export const AdvisorySchema = z.object({
   alternatives: z.array(ActionSchema).max(2),
   confidence: z.number().min(0).max(1),
   learned_from: z.string().nullable(), // constraint id if this reflects a learned rule
-  origin: z.enum(["model", "auto"]), // model = Nemotron; auto = rule-based fallback
+  origin: z.enum(["model", "auto", "mock"]), // model = live Nemotron; auto = rule fallback; mock = offline canned
+  latency_ms: z.number().optional(), // wall-clock of the live model call; set by the Crusoe provider only
   // What a naive headroom-only rule would have done, when it differs from the model's choice
   // and would be wrong (e.g. breaks a co-location). Code-computed, for the "why not rules" contrast.
   rule_pick: z

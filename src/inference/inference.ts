@@ -60,7 +60,7 @@ export function getProvider(env: InferenceEnv): Provider {
 /* --------------------------- shared pure helpers ----------------------------- */
 
 /** The model returns everything except the code-filled id/ts/origin/rule_pick. */
-export const AdvisoryDraftSchema = AdvisorySchema.omit({ id: true, ts: true, origin: true, rule_pick: true });
+export const AdvisoryDraftSchema = AdvisorySchema.omit({ id: true, ts: true, origin: true, rule_pick: true, latency_ms: true });
 export type AdvisoryDraft = z.infer<typeof AdvisoryDraftSchema>;
 
 export const ClassifyResponseSchema = z.object({
@@ -225,6 +225,7 @@ export function renderSnapshot(snapshot: Snapshot): string {
   lines.push(`CLUSTER: ${snapshot.cluster_note}`);
   lines.push(`FOCUS: ${snapshot.focus_rack_id ?? "none"}   TRIGGER: ${snapshot.trigger}`);
   lines.push("RACKS:");
+  lines.push("  headroom_w = cooling capacity minus draw (negative = over cooling capacity, heading to throttle); budget_w = separate electrical ceiling");
   lines.push("  id   temp  proj5m  ttt    headroom_w  band     util%  draw_w  budget_w  jobs");
   for (const r of snapshot.racks) {
     const ttt = r.time_to_throttle_s === null ? "-" : `${Math.round(r.time_to_throttle_s)}s`;
@@ -293,7 +294,7 @@ export class MockProvider implements Provider {
   async advise(snapshot: Snapshot): Promise<Advisory> {
     const focusId = snapshot.focus_rack_id ?? "B7";
     const excludeB3 = snapshot.constraints.find((c) => c.kind === "exclude_rack" && c.target === "B3");
-    const base = { id: `adv-${Math.round(snapshot.sim_time_s)}-${focusId}`, ts: snapshot.sim_time_s, origin: "model" as const };
+    const base = { id: `adv-${Math.round(snapshot.sim_time_s)}-${focusId}`, ts: snapshot.sim_time_s, origin: "mock" as const };
 
     // Second event: an A-row rack spikes; apply the learned "avoid B3" rule automatically.
     if (focusId.startsWith("A")) {
@@ -304,7 +305,7 @@ export class MockProvider implements Provider {
         area: `row ${focusId[0]}`,
         headline: `${focusId} projected to hit 84C throttle, routing around B3`,
         rationale: `${focusId} is projected to reach ${round(snapshot.racks.find((r) => r.id === focusId)?.projected_temp_5m ?? 84)}C within 5 minutes with negative headroom. B3 stays excluded for its firmware window, so ${focusId} offloads to B14 which has headroom.`,
-        action: { type: "migrate_job", params: { job_id: job.id, from_rack: focusId, to_rack: "B14", cap_w: 5670 }, one_line: `Migrate ${job.id} from ${focusId} to B14, avoid B3` },
+        action: { type: "migrate_job", params: { job_id: job.id, from_rack: focusId, to_rack: "B14", cap_w: 11340 }, one_line: `Migrate ${job.id} from ${focusId} to B14, avoid B3` },
         alternatives: [{ type: "cap_intake", params: { from_rack: focusId }, one_line: `Cap ${focusId} intake, shed low-priority jobs` }],
         confidence: 0.8,
         learned_from: excludeB3 ? excludeB3.id : null,
@@ -319,8 +320,8 @@ export class MockProvider implements Provider {
         severity: "warn",
         area: "B7",
         headline: "B3 excluded for firmware, co-location lost, re-solving B7 to B15",
-        rationale: "B3 is excluded by your firmware constraint, so job-4471 cannot co-locate with job-4470. With co-location no longer possible, B7 offloads to B15, the rack with the most headroom (5400W), and caps its intake.",
-        action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "Migrate job-4471 to B15 (co-location lost), cap B7 intake" },
+        rationale: "B3 is excluded by your firmware constraint, so job-4471 cannot co-locate with job-4470. With co-location no longer possible, B7 offloads to B15, the rack with the most headroom (10800W), and caps its intake.",
+        action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "Migrate job-4471 to B15 (co-location lost), cap B7 intake" },
         alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
         confidence: 0.78,
         learned_from: excludeB3.id,
@@ -333,8 +334,8 @@ export class MockProvider implements Provider {
       severity: "warn",
       area: "B7",
       headline: "B7 hits 84C throttle in ~5 min, migrate job-4471 to its partner on B3",
-      rationale: "B7 draw 6300W exceeds its 5670W cooling capacity by 630W, projected 84.5C in 279s. job-4471 must co-locate with job-4470 on B3, which has 3100W headroom, so it goes there rather than the emptiest rack.",
-      action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B3", cap_w: 5670 }, one_line: "Migrate job-4471 to B3 to join job-4470, cap B7 intake" },
+      rationale: "B7 draw 12600W exceeds its 11340W cooling capacity by 1260W, so it will cross its 84C throttle within about 5 minutes. job-4471 must co-locate with job-4470 on B3, which has 6200W headroom, so it goes there rather than the emptiest rack.",
+      action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B3", cap_w: 11340 }, one_line: "Migrate job-4471 to B3 to join job-4470, cap B7 intake" },
       alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
       confidence: 0.85,
       learned_from: null,
@@ -409,6 +410,7 @@ export class CrusoeProvider implements Provider {
   async advise(snapshot: Snapshot, feedback?: string): Promise<Advisory> {
     const user = renderSnapshot(snapshot) + (feedback ? `\n\n${feedback}` : "");
     let lastErr = "";
+    const t0 = Date.now();
     for (let attempt = 0; attempt < 3; attempt++) {
       const extra = attempt === 0 ? "" : `\n\nYour previous output was invalid: ${lastErr}. Return corrected minified JSON only.`;
       const content = await this.call({
@@ -430,6 +432,7 @@ export class CrusoeProvider implements Provider {
           id: `adv-${Math.round(snapshot.sim_time_s)}-${snapshot.focus_rack_id ?? "focus"}`,
           ts: snapshot.sim_time_s,
           origin: "model",
+          latency_ms: Date.now() - t0,
         };
       }
       lastErr = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -453,17 +456,16 @@ export class CrusoeProvider implements Provider {
     return stripThink(content).trim();
   }
 
-  /** POST /chat/completions. Handles one 412 retry (transient orchestrator state). */
-  private async call(body: Record<string, unknown>, retried = false): Promise<string> {
+  /** POST /chat/completions. */
+  private async call(body: Record<string, unknown>): Promise<string> {
     const res = await fetch(`${this.base}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.key}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (res.status === 412 && !retried) {
-      await sleep(15000); // transient "no available servers"; retry SAME model once
-      return this.call(body, true);
-    }
+    // 412 = transient "no available servers". Never block the DO tick with a sleep-retry
+    // (docs/CRUSOE_NOTES.md): throw immediately so doTick catches it and the next alarm tick
+    // re-attempts against a now-warm model while the sim keeps advancing.
     if (res.status === 412) throw new CrusoeUnavailableError("Crusoe orchestrator: no available servers");
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -472,10 +474,6 @@ export class CrusoeProvider implements Provider {
     const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     return json.choices?.[0]?.message?.content ?? "";
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 /** Strip a leading reasoning block defensively, even with thinking disabled. */
@@ -493,7 +491,7 @@ function safeJson(s: string): string {
 /* ---------------------------------- prompts ---------------------------------- */
 // Kept byte-stable so Crusoe prompt caching (MemoryAlloy) stays warm across calls.
 
-export const ADVISORY_SYSTEM = `You are Marshal, a situational-awareness agent for a live GPU data center. You watch rack thermal telemetry and propose ONE executable action a non-technical shift engineer can approve, override, or question. You never do arithmetic: every number you need is given in the snapshot. Your job is to reconcile the operator's active constraints and each rack's physical limits (headroom_w and power budget) into a single feasible recommendation.
+export const ADVISORY_SYSTEM = `You are Marshal, a situational-awareness agent for a live GPU data center. You watch rack thermal telemetry and propose ONE executable action a non-technical shift engineer can approve, override, or question. You never do arithmetic: every number you need is given in the snapshot. Your job is to reconcile the operator's active constraints and each rack's physical limits (the thermal cooling headroom_w and the separate electrical power budget) into a single feasible recommendation.
 
 Rules:
 - Output ONLY minified JSON matching this schema, no prose, no markdown:
@@ -502,6 +500,7 @@ Rules:
 - The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget (draw_w + job power <= budget_w).
 - CO-LOCATION: if the job has a co_located_with partner, migrate it to the rack HOSTING that partner, even if another rack has more headroom. Breaking co-location severely degrades the job, so never pick a rack just because it has the most headroom. If that rack is excluded by an operator constraint, pick the next-best feasible rack and say co-location could not be preserved.
 - If an operator-added constraint shaped your choice, set learned_from to that constraint id (e.g. "c1"). Otherwise null.
+- Thermal throttling is driven by COOLING, not the power budget: a rack heads to throttle when its draw exceeds its cooling capacity, i.e. headroom_w is negative. When you explain a thermal risk, cite the rack's cooling headroom (its draw versus its cooling capacity, e.g. "draw exceeds cooling capacity by N W"), never the power budget. The power budget is a separate electrical ceiling used only as a feasibility check on a migrate target.
 - When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a feasible target and cap the source rack intake to shed low-priority load. State both in one_line when both are needed.
 - Terse operations English. No exclamation marks.`;
 

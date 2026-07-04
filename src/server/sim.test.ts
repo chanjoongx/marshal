@@ -15,13 +15,13 @@ import type { RackState } from "../shared/types";
  * The thermal model is the executable contract with scripts/curve_check.mjs. These tests
  * reproduce the oracle's validated B7 curve two ways: with the pure functions and through the
  * full Sim engine, which must produce identical numbers. Constants come from SIM_SPEC (TAU=220,
- * B7 cooling 5670 W, surge to 6300 W). The oracle rows are copied from `npm run curve`.
+ * B7 cooling 11340 W, surge to 12600 W). The oracle rows are copied from `npm run curve`.
  */
 
-const B7_CAP = 5670;
-const P0 = 3360; // nominal draw -> 62 C
-const P1 = 6300; // after batch surge -> steady state 90 C
-const ACTION_REMOVE = 2380; // migrate job-4471 (700) + cap sheds 3 low-pri batch (1680)
+const B7_CAP = 11340;
+const P0 = 6720; // nominal draw -> 62 C
+const P1 = 12600; // after batch surge -> steady state 90 C
+const ACTION_REMOVE = 4760; // migrate job-4471 (1400) + cap sheds 3 low-pri batch (3360)
 
 // Mirror of curve_check.mjs run(), using the sim's own pure functions.
 function oracleRun(withAction: boolean) {
@@ -67,7 +67,7 @@ describe("thermal model matches the curve_check oracle", () => {
 
   it("reproduces the S1 no-action B7 curve with the pure functions", () => {
     const { rows, crossed, peakRate } = oracleRun(false);
-    expect(rows[120]).toMatchObject({ T: 62, Tss: 90, proj: 82.8, ttt: 339, hr: -630, band: "nominal", pband: "warn" });
+    expect(rows[120]).toMatchObject({ T: 62, Tss: 90, proj: 82.8, ttt: 339, hr: -1260, band: "nominal", pband: "warn" });
     expect(rows[160]).toMatchObject({ T: 66.7, proj: 84, band: "nominal", pband: "critical" });
     expect(rows[180]).toMatchObject({ T: 68.7, proj: 84.5, ttt: 279 });
     expect(rows[200]).toMatchObject({ T: 70.5, band: "watch" });
@@ -81,7 +81,7 @@ describe("thermal model matches the curve_check oracle", () => {
 
   it("reproduces the S1 with-action B7 curve with the pure functions", () => {
     const { rows, crossed, finalT } = oracleRun(true);
-    expect(rows[220]).toMatchObject({ T: 71.2, Tss: 67.3, proj: 68.3, ttt: null, hr: 1750, band: "watch", pband: "nominal" });
+    expect(rows[220]).toMatchObject({ T: 71.2, Tss: 67.3, proj: 68.3, ttt: null, hr: 3500, band: "watch", pband: "nominal" });
     expect(rows[420]).toMatchObject({ T: 68.9, band: "nominal" });
     expect(crossed).toBeNull();
     expect(finalT).toBe(68);
@@ -94,7 +94,7 @@ describe("thermal model matches the curve_check oracle", () => {
     expect(at120.gpu_temp_c).toBe(62);
     expect(at120.projected_temp_5m).toBe(82.8);
     expect(at120.time_to_throttle_s).toBe(339);
-    expect(at120.headroom_w).toBe(-630);
+    expect(at120.headroom_w).toBe(-1260);
     expect(at120.band).toBe("nominal");
     expect(band(at120.projected_temp_5m)).toBe("warn");
 
@@ -118,7 +118,7 @@ describe("action effects on temperature", () => {
     const sim = new Sim();
     sim.start("S1");
     sim.advance(210);
-    expect(sim.getRackStates().find((r) => r.id === "B7")!.power_draw_w).toBe(P1); // 6300 W at surge
+    expect(sim.getRackStates().find((r) => r.id === "B7")!.power_draw_w).toBe(P1); // 12600 W at surge
 
     // A migrate with NO cap_w in params: the sim must still shed low-priority load to relieve B7.
     sim.applyAction(
@@ -127,8 +127,8 @@ describe("action effects on temperature", () => {
     );
 
     const afterAction = sim.getRackStates().find((r) => r.id === "B7")!;
-    expect(afterAction.power_draw_w).toBe(P1 - ACTION_REMOVE); // 3920 W: 700 migrated + 1680 shed
-    expect(afterAction.headroom_w).toBe(1750);
+    expect(afterAction.power_draw_w).toBe(P1 - ACTION_REMOVE); // 7840 W: 1400 migrated + 3360 shed
+    expect(afterAction.headroom_w).toBe(3500);
 
     sim.advance(300);
     const settled = sim.getRackStates().find((r) => r.id === "B7")!;
@@ -136,21 +136,21 @@ describe("action effects on temperature", () => {
     expect(settled.projected_temp_5m).toBeLessThanOrEqual(69);
   });
 
-  it("approved migrate + cap removes 2380 W and matches the oracle with-action curve", () => {
+  it("approved migrate + cap removes 4760 W and matches the oracle with-action curve", () => {
     const sim = new Sim();
     sim.start("S1");
     sim.advance(210);
     const before = sim.getRackStates().find((r) => r.id === "B7")!;
-    expect(before.power_draw_w).toBe(P1); // 6300 W right before the action
+    expect(before.power_draw_w).toBe(P1); // 12600 W right before the action
 
     sim.applyAction(
-      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "" },
+      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "" },
       "adv-test",
     );
 
     const afterAction = sim.getRackStates().find((r) => r.id === "B7")!;
-    expect(afterAction.power_draw_w).toBe(P1 - ACTION_REMOVE); // 3920 W (700 migrated + 1680 shed)
-    expect(afterAction.headroom_w).toBe(1750);
+    expect(afterAction.power_draw_w).toBe(P1 - ACTION_REMOVE); // 7840 W (1400 migrated + 3360 shed)
+    expect(afterAction.headroom_w).toBe(3500);
 
     sim.advance(10);
     const at220 = sim.getRackStates().find((r) => r.id === "B7")!;
@@ -170,7 +170,7 @@ describe("action effects on temperature", () => {
     expect(before.headroom_w).toBeLessThan(0);
 
     sim.applyAction(
-      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "" },
+      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "" },
       "adv-test",
     );
     const after = sim.getRackStates().find((r) => r.id === "B7")!;
@@ -183,7 +183,7 @@ describe("action effects on temperature", () => {
     sim.start("S1");
     sim.advance(210);
     sim.applyAction(
-      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "" },
+      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "" },
       "adv-test",
     );
     for (let i = 0; i < 400; i++) {
@@ -197,14 +197,14 @@ describe("action effects on temperature", () => {
     sim.start("S1");
     sim.advance(210);
     sim.applyAction(
-      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 5670 }, one_line: "" },
+      { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "" },
       "adv-test",
     );
     sim.advance(200);
     const b15 = sim.getRackStates().find((r) => r.id === "B15")!;
-    expect(b15.power_draw_w).toBe(3400); // 2700 baseline + 700 migrated
+    expect(b15.power_draw_w).toBe(6800); // 5400 baseline + 1400 migrated
     expect(b15.band).toBe("nominal");
-    expect(b15.headroom_w).toBe(4700);
+    expect(b15.headroom_w).toBe(9400);
   });
 });
 
@@ -213,8 +213,8 @@ describe("scheduler + world", () => {
     const b7 = b7After(0);
     expect(b7.gpu_temp_c).toBe(62);
     expect(b7.band).toBe("nominal");
-    expect(b7.headroom_w).toBe(2310);
-    expect(b7.power_draw_w).toBe(3360);
+    expect(b7.headroom_w).toBe(4620);
+    expect(b7.power_draw_w).toBe(6720);
   });
 
   it("records the surge placement and keeps every other rack nominal at the surge tick", () => {

@@ -298,6 +298,7 @@ button.primary:hover {
 }
 .model-chip,
 .auto-chip,
+.mock-chip,
 .outcome-chip {
   margin-left: auto;
   font-size: 10px;
@@ -306,6 +307,10 @@ button.primary:hover {
   border-radius: 10px;
   border: 1px solid var(--line);
   color: var(--muted);
+}
+.mock-chip {
+  color: var(--dim);
+  border-style: dashed;
 }
 .model-chip {
   color: #9fd0a0;

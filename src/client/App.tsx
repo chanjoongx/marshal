@@ -154,7 +154,17 @@ function AdvisoryCard(props: {
       <div className="card-top">
         <span className={`sev-chip sev-${advisory.severity}`}>{advisory.severity}</span>
         <span className="area">{advisory.area}</span>
-        {advisory.origin === "auto" ? <span className="auto-chip">rule-based</span> : <span className="model-chip">Nemotron</span>}
+        {advisory.origin === "auto" ? (
+          <span className="auto-chip">rule-based fallback</span>
+        ) : advisory.origin === "mock" ? (
+          <span className="mock-chip" data-testid="advisory-origin">
+            simulated model
+          </span>
+        ) : (
+          <span className="model-chip" data-testid="advisory-origin">
+            Nemotron{advisory.latency_ms ? ` · ${(advisory.latency_ms / 1000).toFixed(1)}s` : ""}
+          </span>
+        )}
         {!pending ? <span className="outcome-chip">{outcome}</span> : null}
       </div>
       <div className="headline" data-testid="advisory-headline">
