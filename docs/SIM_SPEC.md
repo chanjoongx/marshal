@@ -32,16 +32,20 @@ Anchored on a real accelerator so the numbers survive a Crusoe engineer's scruti
 
 ## 2. Thermal model (first-order lumped capacitance)
 
-A rack's GPU junction temperature is modeled as a first-order thermal system. This is the
-standard lumped-capacitance model (Newton's law of cooling): temperature moves toward a
-load-dependent steady state with a time constant, so it has visible inertia and rises and
-falls smoothly rather than instantly. That inertia is exactly what makes a 5-minute
-prediction physically legitimate rather than a straight-line extrapolation gimmick.
+A rack's package temperature (`gpu_temp_c`, governed by the heatsink and coolant thermal
+mass, not an instantaneous silicon die junction) is modeled as a first-order thermal system.
+This is the standard lumped-capacitance model (Newton's law of cooling): temperature moves
+toward a load-dependent steady state with a time constant (~220 s here), so it has visible
+multi-minute inertia and rises and falls smoothly rather than instantly. That inertia is
+exactly what makes a 5-minute prediction physically legitimate rather than a straight-line
+extrapolation gimmick; the throttle at 84 C is the moment this package temperature crosses,
+not an instantaneous die response.
 
 Definitions (all in `src/shared/types.ts` `SIM`):
 
 - `INLET_TEMP_C = 30` cold-aisle / coolant inlet reference.
-- `THROTTLE_TEMP_C = 84` junction throttle onset.
+- `THROTTLE_TEMP_C = 84` throttle onset for the rack package temperature (anchored on the
+  H100 junction-throttle spec in section 1).
 - `THERMAL_TAU_S = 220` time constant, tuned (section 6).
 - `PROJECTION_HORIZON_S = 300` the 5-minute lookahead.
 - `DREF = THROTTLE_TEMP_C - INLET_TEMP_C = 54` the reference delta-T that defines a rack's
@@ -61,8 +65,11 @@ time_to_throttle(T,Tss):
 headroom_w(P, cap)     = cap - P          // extra heat power before steady state hits throttle
 ```
 
-Here `P` is the rack's heat power in watts, which equals its IT electrical draw
-(`power_draw_w`) since essentially all electrical power becomes heat. Use the EXACT
+Here `P` is the rack's heat power in watts, which equals `power_draw_w`, the TOTAL rack
+electrical power (GPUs plus host, network, and cooling overhead), essentially all of which
+becomes heat, not GPU-only power. A rack's `cooling_capacity_w` (11-16 kW here) is its
+heat-removal capacity, and both scales are consistent with the 10-12 kW per 8-GPU node and
+10-50 kW dense-rack figures cited in section 1. Use the EXACT
 exponential `step_temp`, not Euler; it is stable for any step size, so advancing 8 sim-seconds
 in one tick at 8x is still correct.
 
@@ -97,23 +104,23 @@ One pod, two aisles, 24 racks total:
 The aisles are intentionally different lengths so the demo's fixed rack IDs (B7, B3, B15)
 stay valid without renumbering. Real data-center rows vary in length, so this is credible.
 
-Each rack: `gpus = 8`, `power_budget_w = 12000`, `inlet_temp_c = 30`. Cooling capacity by
+Each rack: `gpus = 8`, `power_budget_w = 24000`, `inlet_temp_c = 30`. Cooling capacity by
 class:
 
-- Healthy racks: `cooling_capacity_w = 8100` (G = 150 W/C).
+- Healthy racks: `cooling_capacity_w = 16200` (G = 300 W/C), ~16 kW of heat removal at the throttle delta-T.
 - B7 is the marginal-cooling hero rack (mid-aisle, restricted airflow):
-  `cooling_capacity_w = 5670` (G = 105 W/C). This is why B7, not its neighbors, crosses under
+  `cooling_capacity_w = 11340` (G = 210 W/C), ~11 kW. This is why B7, not its neighbors, crosses under
   a shared batch surge.
 
 Nominal load: each rack carries jobs summing to a `power_draw_w` that puts it in the low 60s C.
-B7 nominal draw is `3360 W` -> steady state 62 C. Three B-row racks run light with real headroom
-to receive work: B12 draw `3000 W` (headroom `5100 W`), B14 draw `2850 W` (headroom `5250 W`),
-and B15 draw `2700 W` (headroom `5400 W`, the most headroom in the pod, steady state 48 C).
+B7 nominal draw is `6720 W` -> steady state 62 C. Three B-row racks run light with real headroom
+to receive work: B12 draw `6000 W` (headroom `10200 W`), B14 draw `5700 W` (headroom `10500 W`),
+and B15 draw `5400 W` (headroom `10800 W`, the most headroom in the pod, steady state 48 C).
 
 B3 is the co-location host, and it is the reason the migration target is not just a headroom
-lookup. It runs three jobs: `job-4470` (high priority, 900 W, the gradient partner), `ckpt-9`
-(low, 800 W), and `b3-svc` (normal, 3300 W), a `5000 W` draw and `3100 W` headroom. That
-headroom is deliberately below B15's `5400 W`, so a headroom-only rule would never pick B3. When
+lookup. It runs three jobs: `job-4470` (high priority, 1800 W, the gradient partner), `ckpt-9`
+(low, 1600 W), and `b3-svc` (normal, 6600 W), a `10000 W` draw and `6200 W` headroom. That
+headroom is deliberately below B15's `10800 W`, so a headroom-only rule would never pick B3. When
 the surge job `job-4471` lands co-located with `job-4470` (section 6), the correct target is B3,
 not the emptiest rack, and reconciling that dependency is the model's real job. In probe testing
 the live Nemotron model picks B3 for the co-location (3/3 runs, `scripts/probe_reasoning.mjs`)
@@ -140,10 +147,10 @@ DEMO_SCRIPT):
 - `t = 0..120s` nominal. Cluster note: "cluster nominal, B-row utilization climbing." B7 at
   62 C. All racks nominal.
 - `t = 120s` the scheduler places a heavy batch on B-row. On B7 this lands `job-4471` (high
-  priority, 700 W, a distributed-training job with a co-location dependency: it must run on the
+  priority, 1400 W, a distributed-training job with a co-location dependency: it must run on the
   same rack as its gradient partner `job-4470`, which is on B3) plus 4 low-priority batch jobs at
-  560 W each (2240 W). B7 heat power goes 3360 -> 6300 W. Its `headroom_w` goes +2310 -> -630 W:
-  draw now exceeds its 5670 W cooling capacity by 630 W, so it will heat toward a steady state of
+  1120 W each (4480 W). B7 heat power goes 6720 -> 12600 W. Its `headroom_w` goes +4620 -> -1260 W:
+  draw now exceeds its 11340 W cooling capacity by 1260 W, so it will heat toward a steady state of
   90 C.
 - Without action, B7 crosses 84 C at `t ~= 460s` (about 5.6 min after the surge). At the surge
   tick, `projected_temp_5m = 82.8 C` (warn) while `current_temp = 62 C` (nominal) and
@@ -160,11 +167,11 @@ Action effects the sim MUST model, so approvals visibly bend the curve:
   jobs one at a time until the rack's projected margin returns above the nominal threshold
   (15 C). It never sheds high-priority jobs; those are migrated, not dropped.
 - The demo's approved action on B7 is `migrate_job(job-4471 -> B15)` plus `cap_intake(B7)`.
-  Migrating 4471 removes 700 W; the cap sheds 3 of the 4 low-priority batch jobs (1680 W).
-  B7 heat power 6300 -> 3920 W, steady state -> 67 C, and the curve bends from ~71 C back down
+  Migrating 4471 removes 1400 W; the cap sheds 3 of the 4 low-priority batch jobs (3360 W).
+  B7 heat power 12600 -> 7840 W, steady state -> 67 C, and the curve bends from ~71 C back down
   to 68 C nominal. It never throttles.
 - The first advisory migrates `job-4471` to B3 to preserve its co-location with `job-4470`, not
-  to the emptiest rack. Because B3's `3100 W` headroom is below B15's `5400 W`, a headroom-only
+  to the emptiest rack. Because B3's `6200 W` headroom is below B15's `10800 W`, a headroom-only
   rule would grab B15 and break the gradient exchange; the advisory surfaces that contrast on
   screen (code computes it with `naiveHeadroomPick`, only when the co-location was actually
   achievable). The operator then overrides with something telemetry cannot see: B3 has a firmware
@@ -188,18 +195,18 @@ Second pressure event (drives the second advisory that shows learning):
 ```
 S1 without action (B7):
   t    T    Tss  proj  ttt   hr    band     pband
-  100  62    62    62     -   2310  nominal  nominal
-  120  62    90  82.8   339   -630  nominal  warn      <- surge; warn fires here
-  160  66.7  90   84    299   -630  nominal  critical
-  200  70.5  90   85    259   -630  watch    critical
-  340  79.7  90  87.4   119   -630  warn     critical
-  460  84    90  88.5     0   -630  critical critical  <- natural crossing (~5.6 min after surge)
+  100  62    62    62     -   4620  nominal  nominal
+  120  62    90  82.8   339  -1260  nominal  warn      <- surge; warn fires here
+  160  66.7  90   84    299  -1260  nominal  critical
+  200  70.5  90   85    259  -1260  watch    critical
+  340  79.7  90  87.4   119  -1260  warn     critical
+  460  84    90  88.5     0  -1260  critical critical  <- natural crossing (~5.6 min after surge)
 
 S1 with action at t=210 (B7):
-  120  62    90  82.8   339   -630  nominal  warn
-  200  70.5  90   85    259   -630  watch    critical
-  220  71.2  67.3 68.3    -   1750  watch    nominal   <- action applied; curve bends down
-  420  68.9  67.3 67.7    -   1750  nominal  nominal   <- returned to nominal, never throttled
+  120  62    90  82.8   339  -1260  nominal  warn
+  200  70.5  90   85    259  -1260  watch    critical
+  220  71.2  67.3 68.3    -   3500  watch    nominal   <- action applied; curve bends down
+  420  68.9  67.3 67.7    -   3500  nominal  nominal   <- returned to nominal, never throttled
 ```
 
 `node scripts/curve_check.mjs` prints `ALL PASS` for: smooth inertia (peak 0.127 C/sim-s),

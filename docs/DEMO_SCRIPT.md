@@ -12,8 +12,8 @@ first (run `npm run probe` or issue one warmup call) so no cold 412 hits mid-tak
 
 Unlike a plain headroom pick, the first target is deterministic. `job-4471` must co-locate with
 its gradient partner `job-4470` on B3, so both the live Nemotron model (B3 in 3/3 probe runs,
-`node scripts/probe_reasoning.mjs`) and the offline mock recommend B3, even though B3's 3100 W
-headroom is well below B15's 5400 W. The operator overrides B3 as having a firmware update in 10
+`node scripts/probe_reasoning.mjs`) and the offline mock recommend B3, even though B3's 6200 W
+headroom is well below B15's 10800 W. The operator overrides B3 as having a firmware update in 10
 minutes (an `exclude_rack B3` constraint the telemetry cannot know). Marshal re-solves: with the
 co-location no longer reachable, headroom becomes the right criterion, so it routes `job-4471` to
 B15, the emptiest rack. The second event then routes around B3 on its own (the mock uses B14; the
@@ -52,7 +52,7 @@ throttle line drawn across the top.
 - headline: `B7 hits 84C throttle in ~5 min, migrate job-4471 to its partner on B3`
 - action line on the card: `Migrate job-4471 to B3 to join job-4470, cap B7 intake`
 - rule-vs-model box on the card: `a headroom-only rule would  Migrate job-4471 to B15 (most
-  headroom, 5400W) — breaks job-4471's co-location with job-4470 on B3`
+  headroom, 10800W) — breaks job-4471's co-location with job-4470 on B3`
 - buttons: `Approve`  `Override`  `Why`
 That box is the whole thesis on screen: the greedy rule grabs the emptiest rack and breaks the
 gradient exchange; Marshal keeps the two jobs together on B3.
@@ -60,7 +60,7 @@ gradient exchange; Marshal keeps the two jobs together on B3.
 ### 20-30s  Why, then Override with a real constraint
 Engineer taps `Why`. Marshal answers in 3 sentences citing live numbers, no new advice:
 - why: `B7 is at 68.7C and projected to reach 84.5C within 5 minutes; time to throttle is 279
-  seconds. Its 6300W draw against a headroom of -630W is why it will cross the 84C throttle line
+  seconds. Its 12600W draw against a headroom of -1260W is why it will cross the 84C throttle line
   without shedding load.`
 Engineer taps `Override` and adds a constraint the telemetry cannot know:
 - override target: `B3`, reason: `firmware update in 10 min`  (kind exclude_rack)

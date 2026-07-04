@@ -92,7 +92,7 @@ table("S1 with action at t=210 (B7):", action.rows);
 
 // migration target B15: healthy cooling, low load, receives job-4471 (700 W)
 const B15_CAP = 16200; // 300 W/C
-const B15_P0 = 6000; // steady-state ~50 C
+const B15_P0 = 5400; // B15 baseline draw, steady-state ~48 C
 const B15_after = B15_P0 + 1400;
 const B15_Tss_after = steadyState(B15_after, B15_CAP);
 console.log(

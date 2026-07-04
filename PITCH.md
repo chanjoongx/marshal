@@ -12,7 +12,7 @@ climbing."
 
 Predict (40s). "A scheduler burst just landed a batch on B-row. Rack B7 is still in the safe
 range, but Marshal is already projecting it will cross its 84C throttle line in about five
-minutes, because the new load exceeds its cooling headroom by 630 watts. You can see it on the
+minutes, because the new load exceeds its cooling headroom by 1260 watts. You can see it on the
 forecast Marshal draws: B7's measured line climbing, its five-minute projection reaching for the
 throttle line. That projection is real physics, temperature has thermal inertia, so five minutes
 ahead is a legitimate forecast, not a straight line. The advisory is one action, and here is the
