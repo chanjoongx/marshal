@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+/playwright-report/
+/test-results/
+/coverage/
+
+# Provided hackathon resource, not our artifact
+*.pdf
+
+# Crusoe skill and Cursor rule live locally only. The tools read them from disk;
+# they are a vendor doc, not our work, so they stay out of the public repo.
+.claude/
+.cursor/

@@ -1,0 +1,23 @@
+{
+  // Cloudflare Worker + Durable Object host for Marshal. The Durable Object
+  // (MarshalSession) holds the sim + agent loop and serves the client over a WebSocket.
+  // Cursor writes src/server/index.ts (Worker entry) and the MarshalSession class.
+  "name": "marshal",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "SESSION", "class_name": "MarshalSession" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MarshalSession"] }],
+  "vars": {
+    "CRUSOE_BASE_URL": "https://api.inference.crusoecloud.com/v1",
+    "MODEL_ADVISORY": "nvidia/NVIDIA-Nemotron-3-Ultra-550B",
+    "MODEL_CLASSIFY": "deepseek-ai/Deepseek-V4-Flash",
+    // MOCK=1 forces the offline MockProvider so the app builds and runs with no key.
+    // For the real demo set MOCK=0 and provide CRUSOE_API_KEY as a secret (see README).
+    "MOCK": "1"
+  }
+  // CRUSOE_API_KEY is a secret, never a var. Local dev: put it in .dev.vars.
+  // Deployed: `wrangler secret put CRUSOE_API_KEY`.
+}

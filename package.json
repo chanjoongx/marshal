@@ -1,0 +1,30 @@
+{
+  "name": "marshal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An agent that predicts GPU rack thermal throttling and proposes constraint-aware job migrations, with a rack view for context.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "playwright test",
+    "check": "npm run typecheck && npm run test",
+    "curve": "node scripts/curve_check.mjs",
+    "probe": "node scripts/probe.mjs"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "@playwright/test": "^1.61.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.107.0"
+  }
+}
