@@ -30,6 +30,7 @@ inference, and learning are real.
 ## Links
 
 - Repo (public, MIT): https://github.com/chanjoongx/marshal
+- Live deployment (Cloudflare Worker + Durable Object, real Nemotron inference): https://marshal.neverboringnow.workers.dev
 - Demo video (1 min): TBD  <- paste YouTube-unlisted or Loom URL here before submitting
 
 ## Form fields
@@ -37,6 +38,8 @@ inference, and learning are real.
 - Track: Crusoe
 - NVIDIA bonus: yes, advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B (best creative use
   of Nemotron)
+- Cloudflare bonus: yes, deployed live on Cloudflare Workers + Durable Objects (the stateful
+  WebSocket agent runtime), calling real Crusoe inference from the Worker.
 - Built during event: yes. Built entirely during the RAISE Summit Hackathon, July 4-5 2026.
 
 ## Notes for judges (real vs simulated)
