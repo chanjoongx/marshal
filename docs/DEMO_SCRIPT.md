@@ -13,8 +13,8 @@ first (run `npm run probe` or issue one warmup call) so no cold 412 hits mid-tak
 The override loop works with whichever rack Marshal recommends; the operator overrides that rack
 as in maintenance and Marshal re-solves to another. In probe testing the live Nemotron model
 recommends B15 first (the rack furthest down the row from the hot B7), so the captions below use
-B15 -> B12. Offline (MOCK=1) the deterministic mock recommends B12 -> B15, which is what the
-smoke test asserts. During the take, override whatever rack Marshal actually shows.
+B15 -> B14 (re-solve), then B12 for the second event. Offline (MOCK=1) the deterministic mock
+recommends B12 -> B15, which is what the smoke test asserts. During the take, override whatever rack Marshal actually shows.
 
 ## Speed and timing
 

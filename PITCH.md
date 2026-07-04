@@ -19,13 +19,13 @@ headroom and cap its intake."
 
 Trust and override (50s). "The engineer can ask why, and Marshal answers with the actual
 numbers, current temp, projected temp, time to throttle, headroom. No new advice, just the
-justification. Now the engineer knows something the telemetry does not: the rack Marshal chose,
-B12, is in maintenance. They override in plain language. Marshal turns that into a structured
-constraint, re-solves in seconds onto B15, and shows a 'learned' chip. Approve, and B7's
+justification. Now the engineer knows something the telemetry does not: the rack Marshal chose
+is in maintenance. They override in plain language. Marshal turns that into a structured
+constraint, re-solves in seconds onto another rack with headroom, and shows a 'learned' chip. Approve, and B7's
 projected temperature bends back down, away from the throttle line."
 
 Learning (30s). "Watch what happens on the next event. A different row spikes. Marshal routes
-around B12 on its own, without being told again, and the advisory carries the same learned
+around the excluded rack on its own, without being told again, and the advisory carries the same learned
 chip. The override did not just fix one incident, it changed how the agent reasons."
 
 Close (20s). "Every number here is computed by code. The language model does the part rules
