@@ -53,17 +53,22 @@ approve, so it is arguing for a decision rather than sitting there as state. A d
 state and leaves the decision to you; Marshal makes the prediction, proposes the action, and
 defends it. Remove the heatmap and the product still works; remove the feed and there is nothing.
 
-Why is the LLM load-bearing, not replaceable by rules? The model's genuine, un-replaceable job is
-interpreting open-ended natural-language operator input into a structured constraint. Mid-shift an
-engineer types a plain-language note, and the model turns it into one machine-readable rule: a kind
-of exclude_rack, avoid_row, or pin_job, plus a target and a short reason. "B3 has a firmware update
-in 10 minutes" becomes exclude_rack B3; "don't put anything on row A" becomes avoid_row A; "leave
-job-4471 where it is" becomes pin_job job-4471. A fixed rule set cannot do this across the unbounded
-space of things an operator might say in the moment, which is exactly where a language model earns
-its place. Code then checks the interpreted target against the live world, the rack or row or job
+Why is the LLM load-bearing, not replaceable by rules? Take the sharpest case first, because it is
+where a rule provably fails. When the operator names a rack by id, "B3 has a firmware update in 10
+minutes", a regex can pull "B3" out and a model is not strictly required. But operators also name
+things by description, "the rack running the checkpoint writer has a firmware update", and there a
+regex has nothing to grab. The model reads the live rack and job list, maps the checkpoint-writer
+job (ckpt-9) to B3, and returns exclude_rack B3. That resolution from a description to the correct id
+against the current world is the one step no fixed rule can do, and it is exactly what an operator
+needs mid-shift. The constraint probe shows it on the real model: 5 of 5 notes parsed into the right
+structured constraint, including 2 description-only notes a regex cannot resolve ("the rack running
+the checkpoint writer" to exclude_rack B3, "take the marginal-cooling rack out of rotation" to
+exclude_rack B7), via `node scripts/probe_constraint.mjs`. The same model also turns an ordinary note
+into one machine-readable rule, a kind of exclude_rack, avoid_row, or pin_job plus a target and a
+short reason: "don't put anything on row A" becomes avoid_row A, "leave job-4471 where it is" becomes
+pin_job job-4471. Code then checks the resolved target against the live world, the rack or row or job
 must actually exist, and if the parse does not validate it falls back to a deterministic regex that
-pulls a rack id out of the note, so a mis-parse can never invent a phantom rack. A probe against the
-live model parses all three kinds correctly, four cases out of four.
+pulls a rack id out of the note, so a mis-parse can never invent a phantom rack.
 
 The model's second job is reconciling that constraint together with the job's co-location dependency
 and the rack physics into one feasible action, and we show that on screen rather than assert it.
@@ -76,8 +81,9 @@ routes to B15 on its own. Encoding every such combination as if-statements explo
 absorb a new operator rule mid-shift. Code does every calculation and enforces feasibility,
 validating that the target exists and re-checking the action against physics, the power budget, and
 the constraints; the model does the language understanding and the judgment. This holds on the real
-model, not just the mock: the constraint probe parses four of four, and a reasoning probe picks B3
-three times out of three and adapts to another rack when B3 is excluded.
+model, not just the mock: the constraint probe parses five of five, two of them description-only,
+and a reasoning probe picks B3 three times out of three and adapts to another rack when B3 is
+excluded.
 
 What is simulated, and why is the thermal model credible? The rack telemetry and cluster are
 simulated; a permanent badge says so. The model is first-order lumped-capacitance heat transfer
@@ -104,15 +110,27 @@ re-prompt the model with the specific violation. Only a verified action reaches 
 if the model keeps failing there is a deterministic, always-feasible fallback marked as such. The
 model proposes; code guarantees.
 
+Why migrate instead of a power or clock cap first? For a bare imminent throttle, a DVFS power or
+clock cap is the standard first move, and we would not argue otherwise. This case is not that. The
+scheduler surge landed job-4471 on B7, separating it from its gradient partner job-4470 on B3, so
+the migration is not a throttle dodge, it restores a co-location the scheduler broke: moving
+job-4471 to B3 both relieves B7 and puts the two jobs back together, which a power cap cannot do.
+And the approved action already caps the source rack's intake, so it is cap-plus-migrate, not
+migrate-alone. Where there is no co-location to restore, a pure throttle is better served by a power
+cap first, and a real DVFS power-cap action is on the roadmap.
+
 Why is this Crusoe's actual problem? Crusoe is energy-first AI infrastructure and runs GPU data
 centers as its core business. The Crusoe track's own Statement Three names this example: a GPU
 cluster agent that fuses power, cooling, and scheduler signals to predict rack-level thermal
 throttling and surface a one-tap migration a non-technical operator can trust and override that
 learns from each override. We built exactly that, on their inference.
 
-Why Nemotron? The advisory is the high-stakes, multi-constraint reasoning step, which is where
-the largest reasoning model earns its cost; the cheap DeepSeek tier gates it so it fires rarely.
-Running the advisory on NVIDIA Nemotron also qualifies for the NVIDIA bonus with the same build.
+Why Nemotron? The advisory is the high-stakes, multi-constraint reasoning step, which is where the
+largest reasoning model earns its cost. Code, not the cheap model, is the gate: the projection
+decides in code which racks escalate to Nemotron, so it fires rarely and nothing a classifier says
+can suppress a real throttle. The DeepSeek tier is a fast, cheap second opinion that only orders
+which flagged rack to advise first. Running the advisory on NVIDIA Nemotron also qualifies for the
+NVIDIA bonus with the same build.
 
 What breaks at real cluster scale, and the path there? Three things. One, telemetry: swap the
 simulator for real power, cooling, and scheduler feeds; the agent loop and contracts do not

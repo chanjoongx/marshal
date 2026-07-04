@@ -15,17 +15,26 @@ two picks side by side.
 
 ## 1. Two-tier trigger policy
 
-Three layers, only the top one is expensive:
+Three layers, only the top one is expensive. Code, not the cheap model, owns the triage: the
+projection decides in code which racks are at risk and which escalate to the heavy model, so
+nothing a classifier says can suppress a real throttle.
 
-- Tier 1, CODE (every tick, zero cost): compute `RackState` for all 24 racks, including
-  `projected_temp_5m`, `time_to_throttle_s`, `headroom_w`, and `band`. Determine the at-risk
-  set: racks whose PROJECTED band is `watch` or worse. If the set is empty, emit an
-  `agent_status` line and stop. No model calls.
-- Tier 2, DeepSeek-V4-Flash (only when the at-risk set is non-empty, cheap): classify each
-  at-risk rack as `nominal | elevated | at_risk` from a compact snapshot. This is the cost
-  gate and triage: only `at_risk` racks escalate. Most ticks never reach Tier 3.
-- Tier 3, Nemotron-Ultra-550B (rare, high-stakes): generate the full structured Advisory for
-  the single most urgent `at_risk` rack that is not debounced. One advisory at a time.
+- Tier 1, CODE (every tick, zero cost, authoritative): compute `RackState` for all 24 racks,
+  including `projected_temp_5m`, `time_to_throttle_s`, `headroom_w`, and `band`. The projected
+  margin (throttle temp minus `projected_temp_5m`) drives two code-owned gates. The at-risk set
+  is every rack whose PROJECTED band is `watch` or worse; if it is empty, emit an `agent_status`
+  line and stop. The escalate set is every at-risk, non-debounced rack whose PROJECTED band is
+  `warn` or worse, and only those reach the heavy model. Both thresholds are computed in code from
+  the projection, so this is the authoritative cost gate and safety gate. Most ticks stop here
+  with no model call.
+- Tier 2, DeepSeek-V4-Flash (only when the escalate set is non-empty, cheap): a fast SECOND
+  OPINION, not a gate. It classifies each rack in the snapshot as `nominal | elevated | at_risk`,
+  and Marshal uses those labels only to PRIORITIZE which warn-or-worse rack to advise first. It
+  can never suppress a code-flagged rack: code already fixed the escalate set, so a wrong
+  `nominal` from the classifier cannot hide a throttle. It labels and orders, nothing more.
+- Tier 3, Nemotron-Ultra-550B (rare, high-stakes): generate the full structured Advisory for the
+  single most urgent rack in the escalate set, preferring one the classifier also flagged
+  `at_risk` but never dropping a code-flagged rack. One advisory at a time.
 
 This mirrors the workshop's documented three-tier escalation pattern (CRUSOE.md section 6),
 extended with the constraint reconciliation and feasibility validation below.
@@ -191,24 +200,35 @@ plain language, not a form.
 2. The server has the heavy model interpret that note into ONE structured constraint
    `{kind, target, reason}`, where `kind` is one of `exclude_rack`, `avoid_row`, or `pin_job` and
    `target` is a rack id, a row letter, or a job id (`Provider.interpretConstraint`, thinking
-   disabled as in section 3, `max_tokens: 120`, `response_format: {type: "json_object"}`). System
-   prompt (byte-stable, `CONSTRAINT_SYSTEM` in `src/inference/inference.ts`, verbatim):
+   disabled as in section 3, `max_tokens: 120`, `response_format: {type: "json_object"}`). The
+   user message carries not just the note but the live rack and job list, so the model can resolve
+   a note that names a rack or job only by description, with no id, to the correct id: "the rack
+   running the checkpoint writer has a firmware update" resolves to `exclude_rack B3` because the
+   model maps the checkpoint-writer job (`ckpt-9`) to B3. That description-to-id resolution is the
+   step a regex cannot do (a regex can pull `B3` out of "B3 has a firmware update" but has nothing
+   to grab in a description), so it is the one path where the model is provably load-bearing;
+   `scripts/probe_constraint.mjs` confirms it on the real model, 5/5 notes including 2 that are
+   description-only. System prompt (byte-stable, `CONSTRAINT_SYSTEM` in
+   `src/inference/inference.ts`, verbatim):
 
    ```
    You convert a shift engineer's free-text note into ONE structured operational constraint for a GPU data center scheduler. Return ONLY minified JSON: {"kind":"exclude_rack|avoid_row|pin_job","target":string,"reason":string}.
    - exclude_rack: a specific rack must not receive migrations. target = the rack id, like "B3" or "B12".
    - avoid_row: a whole aisle or row should be avoided. target = the row letter, like "A" or "B".
    - pin_job: a specific job must not be moved off its rack. target = the job id, like "job-4471".
+   The note may name a rack or job by description instead of by id (for example "the rack running the checkpoint writer", "the marginal-cooling rack", "the gradient partner"). Use the rack and job list in the user message to resolve the description to the correct id. target must be an id that appears in that list.
    Pick the single best-fitting kind. target is only the identifier, no extra words. reason is a short phrase. Return ONLY the JSON.
    ```
-3. Code then VALIDATES the interpreted target against the live world (`validateConstraint` in
-   `src/server/agent.ts`): the rack, row, or job it names must actually exist in the current
-   snapshot. If the model's parse does not validate (wrong kind, empty or unknown target), the
-   server falls back to a deterministic regex parse of the same note (`heuristicConstraint`, which
-   pulls a rack id, a row letter, or a job id out of the text); if that does not validate either,
-   no constraint is added. So a mis-parse can never invent a phantom rack. The offline
-   `MockProvider` uses that same regex heuristic as its `interpretConstraint`, so the smoke test
-   stays deterministic with no network.
+3. Code then VALIDATES the resolved target against the live world (`validateConstraint` in
+   `src/server/agent.ts`): the rack, row, or job the model named, whether by id or resolved from a
+   description, must actually exist in the current snapshot. If the model's parse does not validate
+   (wrong kind, empty or unknown target), the server falls back to a deterministic regex parse of
+   the same note (`heuristicConstraint`, which pulls a rack id, a row letter, or a job id out of the
+   text); if that does not validate either, no constraint is added. So a mis-parse can never invent
+   a phantom rack. The offline `MockProvider` uses that same regex heuristic as its
+   `interpretConstraint`, so the smoke test stays deterministic with no network; because the regex
+   cannot resolve a description, a description-only note yields no constraint offline, which is why
+   the demo's safe fallback is the id-bearing note the regex also handles.
 4. The server assigns the constraint an id, `ts = sim_time_s`, `source = "override"`, and adds
    it to `world.constraints`. From now on it is printed in EVERY snapshot (section 2).
 5. The overridden advisory's record is marked `outcome: "overridden"`, `operator_reason` set to

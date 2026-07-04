@@ -22,7 +22,7 @@ inference, and learning are real.
 
 - Crusoe Managed Inference (OpenAI-compatible endpoint)
 - NVIDIA Nemotron-3-Ultra-550B (advisory + Why reasoning)  <- flag NVIDIA tech used
-- DeepSeek-V4-Flash (fast risk classification tier)
+- DeepSeek-V4-Flash (fast risk classification second opinion; code owns the authoritative triage)
 - Cloudflare Workers + Durable Objects (stateful agent + WebSocket)
 - React + TypeScript (agent console)
 - zod (typed contracts)

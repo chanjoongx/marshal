@@ -56,8 +56,10 @@ Two-tier, both on Crusoe Managed Inference (OpenAI-compatible), called from the 
 Worker, thinking disabled for structured output:
 
 - `nvidia/NVIDIA-Nemotron-3-Ultra-550B` generates the advisory and the Why explanation.
-- `deepseek-ai/Deepseek-V4-Flash` does cheap per-rack risk classification so the heavy model
-  fires rarely.
+- `deepseek-ai/Deepseek-V4-Flash` gives a cheap per-rack risk second opinion that only orders
+  which flagged rack to advise first. Code owns the authoritative triage: the projection decides
+  in code which racks escalate to the heavy model, so it fires rarely and the classifier can never
+  suppress a real throttle.
 
 Verified against the live endpoint with `npm run probe` (8/8 checks pass):
 
@@ -69,13 +71,15 @@ Verified against the live endpoint with `npm run probe` (8/8 checks pass):
   zod schema on Nemotron Ultra; no json_schema-strict fallback was needed.
 - Constraint reconciliation works on the real model: excluding a rack makes the advisory route
   to a different rack and set `learned_from`.
-- Natural-language override interpretation works on the real model: a plain-language operator note
-  is parsed into a structured constraint (kind `exclude_rack`, `avoid_row`, or `pin_job`, plus a
-  target and a reason), all three kinds in 4/4 probe cases (`node scripts/probe_constraint.mjs`,
-  e.g. "B3 has a firmware update in 10 minutes" -> `exclude_rack B3`). Code then validates the
-  target against the live world, with a deterministic regex fallback, so a mis-parse cannot invent
-  a phantom rack. Turning open-ended operator input into a machine-readable rule is the load-bearing
-  model use a fixed rule set cannot cover.
+- Natural-language override interpretation works on the real model, including notes that name a
+  rack only by description. The model is given the live rack and job list, so it resolves a
+  description to the correct id, which a regex cannot: "the rack running the checkpoint writer" ->
+  `exclude_rack B3`, "take the marginal-cooling rack out of rotation" -> `exclude_rack B7`. A regex
+  can pull "B3" out of an id-bearing note but has nothing to grab in a description, so that
+  resolution is the load-bearing step. The probe parses 5/5 notes into the right constraint, 2 of
+  them description-only, across all three kinds `exclude_rack`, `avoid_row`, `pin_job`
+  (`node scripts/probe_constraint.mjs`). Code then validates the resolved target against the live
+  world, with a deterministic regex fallback, so a mis-parse cannot invent a phantom rack.
 - Co-location reasoning works on the real model, not just the mock: when a job carries a
   `co_located_with` dependency on its gradient partner, Nemotron migrates it to the partner's rack
   (B3) over the emptiest rack (B15) in 3/3 runs, and adapts to another rack once B3 is excluded
