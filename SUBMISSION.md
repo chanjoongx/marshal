@@ -46,21 +46,19 @@ Thanks for a well-run event. The track statements were concrete enough to build 
 
 ## 1-minute demo video
 
-Format: a title slide (about 5s), then live product footage of the deployed app (about 45s), then a closing slide (about 10s). Record the product screen silent, then lay the ElevenLabs voice narration and the two slides over it in an editor, synced to the beats below. Record with MOCK=0 (or just record the deployed URL) so the green `Nemotron · Xs` chip is on screen.
+Format: two 30-second halves. First 30s = live footage of the deployed app (MOCK=0, so the green `Nemotron · Xs` chip is on screen). Second 30s = the 5-slide deck. Record each screen silent, voice each half as its own ElevenLabs clip, and lay each over its matching footage. Slide 1 (title) is a 2-3s cold open before the demo, or the thumbnail.
 
-### Narration (for ElevenLabs, ~60s)
+### Part A narration, over the live app (~30s)
 
-> [0-6s, title slide] GPU data centers lose real money to thermal throttling, and today operators mostly find out after a rack has already slowed down.
->
-> [6-15s, app: console + surge + forecast] Marshal predicts it. A batch surge hits rack B7, and five minutes before it throttles, Marshal draws the forecast and raises one advisory.
->
-> [15-28s, app: advisory card + rule contrast] Here's the interesting part. It doesn't move the hot job to the emptiest rack. That job has to stay co-located with its gradient partner on B3, so Marshal sends it there, and shows you the pick a plain headroom rule would have made, and why it's wrong.
->
-> [28-42s, app: free-text override] Now the engineer knows something the telemetry doesn't. They type it in plain language: the rack running the checkpoint writer has a firmware update. Nemotron reads the live racks, resolves that to B3, and turns the sentence into a hard constraint. A regex can't do that.
->
-> [42-50s, app: re-solve + learned chip + second event] Marshal re-solves in seconds, learns the rule, and when a second rack hits the same wall, it handles that one on its own, applying what you just taught it.
->
-> [50-60s, closing slide] Every number is code. The model does the part rules can't: reconcile constraints, and understand language. It runs on NVIDIA Nemotron via Crusoe Managed Inference, on Cloudflare Workers. The telemetry is simulated; the agent is real.
+> GPU racks throttle under heat, and operators find out after one has already slowed down. Marshal predicts it, catching B7 five minutes before it throttles. Notice it doesn't send the job to the emptiest rack; it keeps it with its partner on B3, and shows the pick a plain rule gets wrong. Then the engineer types a note in plain language, and Nemotron turns it into a hard constraint. Approve, and the forecast bends back under the line.
+
+Sync: "predicts it / catching B7" over the climbing forecast and the first advisory; "keeps it with its partner on B3 / plain rule gets wrong" over the advisory card and the rule-vs-model box; "types a note / turns it into a constraint" over the override panel and the re-solve with its learned chip; "Approve, and the forecast bends" over the approve and the curve dropping. (The second A5 event is optional silent footage; do not narrate it.)
+
+### Part B narration, over the 5-slide deck (~30s)
+
+> The hard part of a hot rack isn't spotting it. It's choosing where the work goes under real constraints, and a rule just grabs the emptiest slot. A language model does what a rule can't: reconcile conflicting constraints, and understand plain language. Underneath, code owns every number; a first-order thermal model gives the forecast, and the model does only language and judgment, on Nemotron and DeepSeek through Crusoe, on Cloudflare Durable Objects. The telemetry is simulated; the agent is real.
+
+Sync: slide 2 (the problem) on the first two sentences; slide 3 (why a model, not a rule) on "does what a rule can't"; slide 4 (architecture) on "code owns every number ... Crusoe ... Cloudflare"; slide 5 (closing) on "telemetry simulated; the agent is real".
 
 ### Slides (dark, background #0a0d12 to match the app)
 
