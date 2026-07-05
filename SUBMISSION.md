@@ -14,7 +14,7 @@ Paste-ready material for the RAISE Summit Hackathon submission form.
 
 **Public GitHub Repository:** https://github.com/chanjoongx/marshal
 
-**1 Minute Demo Video:** (upload to YouTube, paste the URL; title, description, and narration below)
+**1 Minute Demo Video:** https://youtu.be/WtLlCCnGc3o
 
 **Bonus prize tracks (select only the ones actually used):**
 - [x] NVIDIA (advisory, Why, and override interpretation run on Nemotron-3-Ultra-550B)
@@ -46,9 +46,6 @@ Advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B with a DeepSeek-V4-Flash
 > Code computes every number (a first-order thermal model gives the forecast; the model never does arithmetic). Advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B with a DeepSeek-V4-Flash triage tier via Crusoe Managed Inference, deployed on Cloudflare Workers and Durable Objects.
 >
 > Rack telemetry is simulated; the agent, the inference, and the learning are real.
->
-> Live: https://marshal.neverboringnow.workers.dev
-> Code (public): https://github.com/chanjoongx/marshal
 >
 > Crusoe track, Statement Three: an agent that builds a live situational model from streaming inputs and drives proactive actions an operator can trust, question, and override. Bonus tracks: NVIDIA (Nemotron) and Cloudflare (Workers + Durable Objects).
 

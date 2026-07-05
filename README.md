@@ -2,7 +2,7 @@
 
 **Predicts GPU rack thermal throttling about five minutes before it happens, and hands a shift engineer one constraint-aware fix to approve, override, or question.** An agent console, not a dashboard.
 
-[**Live demo**](https://marshal.neverboringnow.workers.dev) &nbsp;·&nbsp; Crusoe track &nbsp;·&nbsp; RAISE Summit Hackathon, July 2026 &nbsp;·&nbsp; solo, remote
+[**Live demo**](https://marshal.neverboringnow.workers.dev) &nbsp;·&nbsp; [**1-min demo video**](https://youtu.be/WtLlCCnGc3o) &nbsp;·&nbsp; Crusoe track &nbsp;·&nbsp; RAISE Summit Hackathon, July 2026 &nbsp;·&nbsp; solo, remote
 
 ![Marshal predicting a throttle and proposing a co-location-aware migration](docs/img/advisory.png)
 
