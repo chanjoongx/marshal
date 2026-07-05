@@ -56,9 +56,9 @@ Sync: "predicts it / catching B7" over the climbing forecast and the first advis
 
 ### Part B narration, over the 5-slide deck (~30s)
 
-> The hard part of a hot rack isn't spotting it. It's choosing where the work goes under real constraints, and a rule just grabs the emptiest slot. A language model does what a rule can't: reconcile conflicting constraints, and understand plain language. Underneath, code owns every number; a first-order thermal model gives the forecast, and the model does only language and judgment, on Nemotron and DeepSeek through Crusoe, on Cloudflare Durable Objects. The telemetry is simulated; the agent is real.
+> So, why a model and not a rule? A rule just grabs the emptiest rack. The model reconciles real constraints and reads plain language, while code owns every number, so the forecast is real physics. It runs on NVIDIA Nemotron and DeepSeek through Crusoe, on Cloudflare. The telemetry is simulated; the agent is real.
 
-Sync: slide 2 (the problem) on the first two sentences; slide 3 (why a model, not a rule) on "does what a rule can't"; slide 4 (architecture) on "code owns every number ... Crusoe ... Cloudflare"; slide 5 (closing) on "telemetry simulated; the agent is real".
+Sync: slide 2 (the problem) on "a rule just grabs the emptiest rack"; slide 3 (why a model) on "reconciles real constraints and reads plain language"; slide 4 (architecture) on "code owns every number ... Crusoe ... Cloudflare"; slide 5 (closing) on "telemetry simulated; the agent is real".
 
 ### Slides (dark, background #0a0d12 to match the app)
 
