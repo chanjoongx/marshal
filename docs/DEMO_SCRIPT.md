@@ -82,11 +82,12 @@ where the model is provably load-bearing. Code then checks B3 is a real rack bef
 
 ### 30-45s  Reconcile, re-solve, Approve, forecast bends away
 Marshal injects the constraint and re-solves in seconds. With B3 excluded the co-location can no
-longer be preserved, so headroom becomes the right criterion and a new advisory replaces the old:
-- headline (mock example): `B3 excluded for firmware, co-location lost, re-solving B7 to B15`
-- action line (mock example): `Migrate job-4471 to B15 (co-location lost), cap B7 intake`
-- the live model may name a different high-headroom rack that avoids B3 (B15, or for example B12);
-  what matters on screen is that it avoids B3, so do not narrate "the emptiest rack"
+longer be restored, so migrating job-4471 anywhere fixes nothing; the least disruptive move is a
+non-destructive power cap on B7, and a new advisory replaces the old:
+- headline (mock example): `B3 excluded for firmware, co-location lost, power-capping B7 to hold`
+- action line (mock example): `Power-cap B7 to hold under throttle (co-location lost), non-destructive`
+- the live model phrases the power cap its own way (for example "Power-cap B7 to 11340W to stop the
+  thermal climb"); what matters on screen is a non-destructive power cap, not a migration
 - learned chip on the card: `learned: avoids rack B3` (the rack resolved from the description; the
   parenthetical carries the note's short reason)
 Engineer taps `Approve`. The chosen rack lights up in the heatmap, and in the MARSHAL FORECAST the

@@ -26,9 +26,9 @@ The operator types a note the telemetry cannot know, in plain language, includin
 
 ![Typing a plain-language override that names the rack only by description](docs/img/override.png)
 
-Then Marshal re-solves in seconds and learns the rule. When a second rack spikes whose job also wants that now-excluded partner, Marshal power-caps it non-destructively on its own, carrying the same learned constraint, without being told again.
+Then Marshal re-solves in seconds and learns the rule. With B3 excluded, co-location can no longer be restored, so migrating fixes nothing; Marshal power-caps B7 non-destructively instead, holding it under throttle without shedding the high-priority job. When a second rack later hits the same wall, it power-caps that one on its own too, carrying the same learned constraint, without being told again.
 
-![The re-solved advisory carries a learned chip and the forecast bends away from the throttle line](docs/img/resolve.png)
+![The re-solved advisory power-caps B7 since B3 is excluded, and carries the learned rule](docs/img/resolve.png)
 
 Verified on the real model, not just the mock: the co-location pick (`scripts/probe_reasoning.mjs`, B3 over B15 in 3/3 runs) and the constraint interpretation (`scripts/probe_constraint.mjs`, 5/5 including 2 description-only cases), both end to end on the deployed Worker.
 
