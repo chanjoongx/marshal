@@ -32,9 +32,10 @@ call, so it routes to a feasible high-headroom rack that avoids B3 and shows a '
 B7's projection bends back down, away from the throttle line."
 
 Learning (30s). "Watch the next event. A different aisle spikes, and its hot job happens to want
-the same partner on B3. But B3 is excluded now, so Marshal routes around it on its own, without
-being told again, carrying the same learned chip. The override did not just fix one incident, it
-changed how the agent reasons."
+the same partner on B3. But B3 is excluded now, so it cannot co-locate there, and Marshal reaches
+for the least disruptive lever on its own, a non-destructive power cap that holds the rack under
+throttle, carrying the same learned chip. The override did not just fix one incident, it changed
+how the agent reasons."
 
 Close (20s). "Every number here is computed by code. The language model does the two parts rules
 cannot: reading the operator's plain-language note into a structured constraint, and reconciling

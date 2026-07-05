@@ -1,105 +1,131 @@
 # Marshal
 
-An agent that predicts GPU rack thermal throttling before it happens and proposes one
-constraint-aware job migration a shift engineer can approve, override, or question. The agent
-feed is the product; the rack heatmap is context beside it. Not a dashboard.
+**Predicts GPU rack thermal throttling about five minutes before it happens, and hands a shift engineer one constraint-aware fix to approve, override, or question.** An agent console, not a dashboard.
 
-Built entirely during the RAISE Summit Hackathon, July 4-5 2026. Crusoe track. Solo, remote.
+[**Live demo**](https://marshal.neverboringnow.workers.dev) &nbsp;·&nbsp; Crusoe track &nbsp;·&nbsp; RAISE Summit Hackathon, July 2026 &nbsp;·&nbsp; solo, remote
 
-## What it is, in 20 seconds
+![Marshal predicting a throttle and proposing a co-location-aware migration](docs/img/advisory.png)
 
-A live GPU data center pod throws a batch surge onto a row. One rack's cooling headroom is
-exceeded, so its GPU temperature will cross the 84 C throttle line in a few minutes. Marshal sees
-it coming from the projection, not after the fact, draws a live forecast of that rack heading for
-the throttle line, and issues an advisory. The twist is where it moves the job: the hot rack's
-high-priority job must stay co-located with its gradient partner on another rack, so Marshal sends
-it there rather than to the emptiest rack, and the card shows side by side that a headroom-only
-rule would have grabbed the emptiest rack and broken the dependency. The engineer can ask "why"
-and get the numbers, or override in plain language with a real-world constraint the telemetry
-cannot know ("that rack has a firmware update in ten minutes"). Marshal interprets that note into a
-structured constraint, reconciles it, re-solves in seconds, the forecast bends away from the
-throttle line on approve, and it remembers the rule for every later decision.
+Marshal watches a simulated GPU data center, sees a rack heading for its 84&nbsp;C throttle line while it still looks fine, and gives the on-shift engineer a single decision: move this job here, or power-cap that rack, with the reasoning and the pick a naive rule would have made shown side by side. Every number is computed in code from a cited thermal model; the language model does only the part rules cannot. It runs live on NVIDIA Nemotron-3-Ultra-550B via Crusoe Managed Inference, on Cloudflare Workers and Durable Objects.
+
+---
+
+## Why a language model, not a rule
+
+The whole pitch is that the model does two things a fixed rule set provably cannot, and Marshal shows both on screen rather than asserting them.
+
+### 1. It reconciles a job's co-location dependency
+
+When rack B7 goes over its cooling capacity, its high-priority job `job-4471` must stay co-located with its gradient partner `job-4470`, which runs on B3. A headroom-only rule grabs B15, the emptiest rack, and breaks the dependency. Marshal migrates to B3 instead, even though B3 has far less headroom, and the advisory card puts both picks side by side: the rule's flawed choice next to the model's.
+
+![The card shows the rule's pick, B15 the emptiest rack, next to the model's pick, B3, and why the rule is wrong](docs/img/rule-contrast.png)
+
+### 2. It interprets a plain-language override
+
+The operator types a note the telemetry cannot know, in plain language, including one that names a rack only by description: *"the rack running the checkpoint writer has a firmware update in 10 min."* Nemotron reads the live rack and job list, resolves "checkpoint writer" to the `ckpt-9` job on B3, and turns the sentence into a structured `exclude_rack B3` constraint that every later decision must respect. A regex can pull "B3" out of a note that literally says "B3"; it cannot resolve a description. That resolution is the step only the model can do.
+
+![Typing a plain-language override that names the rack only by description](docs/img/override.png)
+
+Then Marshal re-solves in seconds and learns the rule. When a second rack spikes whose job also wants that now-excluded partner, Marshal power-caps it non-destructively on its own, carrying the same learned constraint, without being told again.
+
+![The re-solved advisory carries a learned chip and the forecast bends away from the throttle line](docs/img/resolve.png)
+
+Verified on the real model, not just the mock: the co-location pick (`scripts/probe_reasoning.mjs`, B3 over B15 in 3/3 runs) and the constraint interpretation (`scripts/probe_constraint.mjs`, 5/5 including 2 description-only cases), both end to end on the deployed Worker.
+
+---
+
+## Architecture
+
+A stateful agent runs inside one Durable Object per browser tab. It holds the sim and the agent loop, streams the world over a WebSocket, and calls two Crusoe-hosted models. Code owns every number and the safety gates; the models do language and judgment.
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser · React agent console"]
+    UI["Agent feed (hero)<br/>Forecast chart · Rack heatmap"]
+  end
+  subgraph Edge["Cloudflare Workers"]
+    DO["Durable Object, one per tab<br/>Deterministic sim + agent loop<br/>+ constraint memory"]
+  end
+  subgraph Crusoe["Crusoe Managed Inference"]
+    NEM["NVIDIA Nemotron-3-Ultra-550B<br/>advisory · why · override parse"]
+    DS["DeepSeek-V4-Flash<br/>fast risk second opinion"]
+  end
+  UI <-->|"WebSocket: live state + controls"| DO
+  DO -->|"advise · why · interpret note"| NEM
+  DO -->|"classify"| DS
+```
+
+## How the agent decides, every tick
+
+Code triages from the physics. The heavy model fires rarely, only on a rack the projection already flagged, and only its judgment (which action, reconciling which constraints) is trusted; code validates the result against physics before the engineer ever sees it.
+
+```mermaid
+flowchart TD
+  T["Tick"] --> P["Code: project every rack 5 min ahead<br/>first-order thermal model"]
+  P --> R{"Any rack projected<br/>warn or worse?"}
+  R -->|no| T
+  R -->|yes| C["DeepSeek: fast risk second opinion<br/>prioritizes, never suppresses"]
+  C --> A["Nemotron: ONE advisory for the focus rack<br/>reconciles headroom + co-location + operator rules"]
+  A --> V{"Code validates the action<br/>vs physics, budget, constraints"}
+  V -->|infeasible| A
+  V -->|feasible| S["Surface one advisory"]
+  S --> O{"Operator"}
+  O -->|approve| E["Apply, the forecast bends<br/>back below throttle"]
+  O -->|"override in plain language"| I["Nemotron interprets the note<br/>into a structured constraint"]
+  I --> A
+  O -->|why| W["Nemotron cites the live numbers,<br/>no new advice"]
+```
+
+---
 
 ## Real vs simulated
 
 Honesty matters for judging, so the boundary is explicit and shown in the UI.
 
-- Real: the agent loop, Crusoe Managed Inference on NVIDIA Nemotron-3-Ultra-550B, the
-  constraint reconciliation (including a job's co-location dependency), the model turning a
-  plain-language operator override note into a structured constraint (code validates the target
-  against the live world), the live temperature forecast the agent draws, the override-to-learning
-  loop, and the action-feasibility validation that rejects an infeasible migration before it
-  reaches the engineer. The advisory card also shows, side by side, what a headroom-only rule
-  would have done, so the model's advantage is demonstrated rather than claimed.
-- Simulated: the rack telemetry and the cluster. A first-order thermal model (cited GPU specs,
-  see docs/SIM_SPEC.md) gives temperatures real physical inertia, which is what makes a
-  5-minute prediction legitimate. A permanent `SIMULATED TELEMETRY` badge is always visible.
-
-## How to run
-
-```
-npm install
-npm run curve          # thermal oracle: proves the sim constants (no network)
-npm run check          # typecheck + unit tests
-# offline app (MockProvider, no key):
-MOCK=1 npm run dev
-# real Crusoe inference:
-#   put CRUSOE_API_KEY in .dev.vars, set MOCK=0, then `npm run dev`
-```
-
-Inference details (models, latency, verified request shape) are filled in from the probe:
-see the Inference section below and docs/CRUSOE_NOTES.md.
+- **Real:** the agent loop, Crusoe Managed Inference on NVIDIA Nemotron-3-Ultra-550B, the constraint reconciliation (including a job's co-location dependency), the model turning a plain-language override into a code-validated structured constraint, the live temperature forecast the agent draws, the override-to-learning loop, and the feasibility validation that rejects an infeasible action before it reaches the engineer. The card also shows what a headroom-only rule would have done, so the model's advantage is demonstrated, not claimed. Live advisories carry a green `Nemotron · Xs` chip with the real call latency; the offline mock is labeled `simulated model`.
+- **Simulated:** the rack telemetry and the cluster. A first-order lumped-capacitance thermal model, anchored on cited H100 specs (see `docs/SIM_SPEC.md`), gives temperatures real multi-minute inertia, which is what makes a five-minute prediction legitimate rather than a straight-line gimmick. A permanent `SIMULATED TELEMETRY` badge is always visible.
 
 ## Inference
 
-Two-tier, both on Crusoe Managed Inference (OpenAI-compatible), called from the Cloudflare
-Worker, thinking disabled for structured output:
+Two tiers, both on Crusoe Managed Inference (OpenAI-compatible), called from the Cloudflare Worker with thinking disabled for structured output:
 
-- `nvidia/NVIDIA-Nemotron-3-Ultra-550B` generates the advisory and the Why explanation.
-- `deepseek-ai/Deepseek-V4-Flash` gives a cheap per-rack risk second opinion that only orders
-  which flagged rack to advise first. Code owns the authoritative triage: the projection decides
-  in code which racks escalate to the heavy model, so it fires rarely and the classifier can never
-  suppress a real throttle.
+- `nvidia/NVIDIA-Nemotron-3-Ultra-550B` generates the advisory, the Why explanation, and the natural-language override interpretation.
+- `deepseek-ai/Deepseek-V4-Flash` is a fast per-rack risk second opinion. Code owns the authoritative triage from the projection; the classifier only prioritizes and can never suppress a physics-flagged advisory.
 
-Verified against the live endpoint with `npm run probe` (8/8 checks pass):
+Verified against the live endpoint:
 
-- Both model strings resolve as written: `nvidia/NVIDIA-Nemotron-3-Ultra-550B` and
-  `deepseek-ai/Deepseek-V4-Flash`.
-- Thinking disabled via a top-level `chat_template_kwargs` field (`enable_thinking:false` for
-  Nemotron, `thinking:false` for DeepSeek). No reasoning leaked into content.
-- Structured JSON via `response_format: {type:"json_object"}` validates against our Advisory
-  zod schema on Nemotron Ultra; no json_schema-strict fallback was needed.
-- Constraint reconciliation works on the real model: excluding a rack makes the advisory route
-  to a different rack and set `learned_from`.
-- Natural-language override interpretation works on the real model, including notes that name a
-  rack only by description. The model is given the live rack and job list, so it resolves a
-  description to the correct id, which a regex cannot: "the rack running the checkpoint writer" ->
-  `exclude_rack B3`, "take the marginal-cooling rack out of rotation" -> `exclude_rack B7`. A regex
-  can pull "B3" out of an id-bearing note but has nothing to grab in a description, so that
-  resolution is the load-bearing step. The probe parses 5/5 notes into the right constraint, 2 of
-  them description-only, across all three kinds `exclude_rack`, `avoid_row`, `pin_job`
-  (`node scripts/probe_constraint.mjs`). Code then validates the resolved target against the live
-  world, with a deterministic regex fallback, so a mis-parse cannot invent a phantom rack.
-- Co-location reasoning works on the real model, not just the mock: when a job carries a
-  `co_located_with` dependency on its gradient partner, Nemotron migrates it to the partner's rack
-  (B3) over the emptiest rack (B15) in 3/3 runs, and adapts to another rack once B3 is excluded
-  (`node scripts/probe_reasoning.mjs`). This is what the on-screen rule-vs-model contrast reports.
-- Latency: classification ~0.8-1.1s, advisory ~2.5-4.6s, Why ~0.9-1.2s.
+- Both model strings resolve; thinking disabled via top-level `chat_template_kwargs`; structured JSON via `response_format: {type:"json_object"}` validates against the Advisory zod schema on Nemotron Ultra (`npm run probe`, 8/8).
+- The model turns a plain-language operator note into a structured constraint (`exclude_rack`, `avoid_row`, or `pin_job`, plus a target and reason), including notes that name the rack or job only by description, in 5/5 probe cases, 2 of them description-only (`npm run probe:constraint`, for example "the rack running the checkpoint writer" to `exclude_rack B3`). Code then validates the resolved id against the live world, with a deterministic regex fallback, so a mis-parse cannot invent a phantom rack.
+- Co-location reasoning works on the real model, not just the mock: Nemotron migrates the job to its partner's rack (B3) over the emptiest rack (B15) in 3/3 runs and adapts when B3 is excluded (`npm run probe:reasoning`).
+- Latency: classification about 0.8 to 1.1s, advisory 2.5 to 4.6s, Why 0.9 to 1.2s.
 
-The same two-tier inference has been run end to end on the deployed Cloudflare Worker
-(https://marshal.neverboringnow.workers.dev) with real Crusoe inference, not only locally.
+The exact request shape and error rules are in `docs/CRUSOE_NOTES.md`; the provider is `src/inference/inference.ts`. The full agent contract is `docs/AGENT_SPEC.md`; the thermal model and its executable oracle are `docs/SIM_SPEC.md` and `scripts/curve_check.mjs`.
 
-The exact request shape and error rules are in docs/CRUSOE_NOTES.md; the provider is in
-src/inference/inference.ts.
+## Run it
+
+```
+npm install
+npm run curve          # thermal oracle: proves the sim constants, no network
+npm run check          # typecheck + unit tests
+MOCK=1 npm run dev     # offline app on the deterministic mock, no key needed
+```
+
+For real inference, put `CRUSOE_API_KEY` in `.dev.vars`, set `MOCK=0`, then `npm run dev`.
+
+## Deploy
+
+```
+npm run deploy         # bakes MOCK=0 into the build, deploys to Cloudflare, restores the source
+```
+
+The committed `wrangler.jsonc` keeps `MOCK=1` so local dev and the smoke test run offline without a key; the deploy script sets `MOCK=0` for the built artifact only. Set the inference secret once with `npx wrangler secret put CRUSOE_API_KEY`.
 
 ## Track and bonus
 
-- Track: Crusoe. The build is exactly the Crusoe track's Statement Three example: a GPU cluster
-  agent that fuses telemetry to predict rack-level thermal throttling and surfaces a one-tap
-  migration a non-technical operator can trust and override.
-- NVIDIA bonus: the advisory reasoning runs on NVIDIA Nemotron, so this also qualifies for the
-  best-creative-use-of-Nemotron prize.
+- **Crusoe track.** This is the Crusoe track's Statement Three example built for real: a GPU cluster agent that fuses telemetry to predict rack-level thermal throttling and surfaces a one-tap, constraint-aware migration a non-technical operator can trust, override, and teach.
+- **NVIDIA bonus.** The advisory, the Why, and the override interpretation all run on NVIDIA Nemotron, the load-bearing reasoning in the product.
+- **Cloudflare.** Deployed live on Cloudflare Workers and Durable Objects, the stateful WebSocket runtime for the agent.
 
 ## License
 
-MIT. See LICENSE.
+MIT. See `LICENSE`.

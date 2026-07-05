@@ -22,8 +22,8 @@ description-only). Marshal re-solves: with the co-location no longer reachable, 
 right criterion, so it routes `job-4471` to a high-headroom rack that avoids B3. The offline mock
 picks B15; the live model picks a feasible high-headroom rack that avoids B3, which may be B15 or
 another such as B12, both correct, so narrate "a rack that avoids B3", not "the emptiest rack". The
-second event then routes around B3 on its own (the mock uses B14; the live model picks whichever
-feasible rack it prefers).
+second event then handles the excluded partner on its own (the mock power-caps A5 non-destructively;
+the live model power-caps or migrates to a rack that avoids B3).
 The safe fallback is the id-bearing note `B3 has a firmware update in 10 min`, which even the regex
 resolves; that is exactly what the offline smoke test drives (it fills `B3 has a firmware update in
 10 min` and submits against the mock, whose `interpretConstraint` is only the regex).
@@ -41,7 +41,7 @@ margin and B7 never actually throttles on screen.
 | 8-20s | 120-168 | surge + WARN card (co-locates on B3) + forecast chart + rule-vs-model box |
 | 20-30s | 168-208 | Why + Override (type checkpoint-writer note) |
 | 30-45s | 208-268 | re-solve to a high-headroom rack that avoids B3 + Approve + forecast bends away |
-| 45-55s | 268-308 | second event, routes around B3 on its own |
+| 45-55s | 268-308 | second event, power-cap A5 (B3 excluded, cannot co-locate) |
 | 55-60s | 308-328 | resolution |
 
 ## Arc
@@ -95,11 +95,13 @@ back to nominal.
 
 ### 45-55s  Second event, learning proven
 A different aisle spikes: A5 takes a surge whose high-priority job also co-locates with job-4470
-on B3. But B3 is excluded now, so the new advisory carries the same `learned: avoids rack B3` chip and
-routes around B3 on its own, without being told again. There is no rule-vs-model box this time,
-because with the partner's rack excluded the model has no better co-location to reach for:
-- headline: `A5 projected to hit 84C throttle, routing around B3`
-- action line: `Migrate job-4820 from A5 to B14, avoid B3`
+on B3. But B3 is excluded now (learned), so it cannot co-locate there, and the new advisory carries
+the same `learned: avoids rack B3` chip and reaches for the least disruptive lever on its own: a
+non-destructive power cap that holds A5 under throttle without shedding the job or breaking more
+co-location. There is no rule-vs-model box this time:
+- headline (mock example): `A5 hits 84C throttle in ~5 min, power-capping (B3 excluded, cannot co-locate)`
+- action line (mock example): `Power-cap A5 to hold under throttle, leave B3 alone`
+- the live model may instead migrate to a rack that avoids B3; either way it never touches B3
 The forecast chart reappears for A5. Engineer taps `Approve`.
 
 ### 55-60s  Resolution
