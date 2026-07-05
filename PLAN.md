@@ -133,8 +133,8 @@ test, the video, the README, the public repo.
 ## Testing
 
 - tests/smoke.spec.ts [ME], Playwright: MOCK=1, start S1 at 8x, assert an advisory fires before
-  B7 throttles, override to add the exclude-B12 constraint, assert a later advisory shows the
-  learned chip and does not target B12, assert B7 projected temp drops after Approve.
+  B7 throttles, override in plain language to exclude B3, assert a later advisory shows the
+  learned chip and does not target B3, assert B7 projected temp drops after Approve.
 - vitest units [CURSOR]: thermal integration matches curve_check, 5-min projection, action
   effects on temperature, validateAction against constraints/headroom/budget, trigger debounce.
 - `npm run check` = typecheck + vitest. `npm run curve` = the thermal oracle.

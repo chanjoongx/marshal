@@ -114,7 +114,7 @@ export const ConstraintSchema = z.object({
   id: z.string(),
   kind: ConstraintKindSchema,
   target: z.string(), // rack id, row, or job id per kind
-  reason: z.string(), // operator words, e.g. "B12 in maintenance"
+  reason: z.string(), // operator words, e.g. "B3 has a firmware update in 10 min"
   ts: z.number(), // sim-time seconds when added
   source: z.enum(["override", "operator"]),
 });

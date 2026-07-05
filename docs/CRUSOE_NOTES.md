@@ -132,13 +132,14 @@ zod error back into the prompt, then emit a rule-based fallback advisory marked 
 | 404 `model not found` | wrong model string | Try the case / prefix variant noted above. |
 | 404 `{"detail":"Not Found"}` | wrong base URL or path | Fix the URL. |
 | 429 | usually a stale / wrong base URL | Verify the exact base URL FIRST. If correct, exponential backoff + lower max_tokens. Unlikely for us (1B token quota). |
-| 412 `no available servers` | transient Crusoe orchestrator state | Wait 30-60s, retry the SAME model, do NOT switch. Provider does ONE retry with ~30s backoff. |
+| 412 `no available servers` | transient Crusoe orchestrator state | Retry the SAME model, do NOT switch. The provider throws immediately with no blocking sleep; the DO tick catches it and the next alarm tick re-attempts. |
 | streaming final chunk | empty `choices` | Guard every loop: `if (!chunk.choices?.length) continue;`. |
 
-412 in the live loop: a persistent 412 must NOT block the sim. Surface
-`agent_status: "reasoning temporarily unavailable, retrying"` and keep ticking; the advisory
-lands when the retry succeeds. Demo mitigation: warm both models with a tiny call at Worker
-startup so no cold 412 hits mid-recording.
+412 in the live loop: a 412 must NOT block the sim. The provider throws a `CrusoeUnavailableError`
+immediately with no sleep; `doTick` catches it, surfaces
+`agent_status: "reasoning temporarily unavailable, retrying"`, and keeps ticking, so the next alarm
+tick re-attempts against a now-warm model and the advisory lands then. Demo mitigation: warm both
+models with a small call before recording so no cold 412 hits mid-take.
 
 For structured advisory and classification we use non-streaming requests and parse the whole
 body, which sidesteps the streaming-chunk pitfall entirely. Streaming is only worth it for the
@@ -159,6 +160,6 @@ Cached input is roughly 4x cheaper and lowers TTFT.
    Advisory zod schema; otherwise record which method (json_schema strict, or prompt-only)
    works, and make that the default.
 4. Per-call latency for advisory and classification at these settings.
-5. The single 412 retry path, if a 412 is encountered.
+5. The non-blocking 412 path: an immediate throw that the tick catches, not a blocking sleep.
 
 Record the winning request shape and latencies in README (Inference section).

@@ -2,7 +2,7 @@
 //
 // The probe verifies inference in Node. This verifies the same models running inside the actual
 // workerd Durable Object, driven through the full agent loop: it starts S1, waits for the live
-// Nemotron WARN on B7, overrides the recommended rack as "in maintenance", waits for the
+// Nemotron WARN on B7, overrides the recommended rack in plain language (firmware update), waits for the
 // re-solve (which must avoid the excluded rack and set learned_from), approves it, and confirms
 // B7's projected temperature bends down. Standalone, uses Node's global WebSocket. Not the app.
 //
@@ -84,7 +84,7 @@ function onAdvisory(a) {
     printAdvisory(a);
     phase = "await_resolve";
     const note = `${excluded} has a firmware update in 10 min`;
-    log(`Operator override (plain language): "${note}" — model must interpret this into exclude_rack ${excluded}`);
+    log(`Operator override (plain language): "${note}" - model must interpret this into exclude_rack ${excluded}`);
     send({ type: "control", action: "override", advisory_id: a.id, text: note });
   } else if (phase === "await_resolve" && a.id !== firstAdv.id) {
     log(`=== RE-SOLVE ADVISORY (origin=${a.origin}) ===`);
