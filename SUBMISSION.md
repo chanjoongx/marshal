@@ -1,50 +1,80 @@
 # SUBMISSION.md
 
-Paste-ready material for the submission form
-(https://cerebralvalley.ai/e/raise-summit-hackathon/hackathon/submit).
-
-## Description (150 words)
-
-Marshal is a situational-awareness agent for live GPU data center operations. It watches
-streaming rack telemetry, predicts rack-level thermal throttling about five minutes before it
-happens, and proposes one constraint-aware job migration a non-technical shift engineer can
-approve, override, or question in the moment. Code computes every number: a first-order thermal
-model anchored on H100 SXM5 specs gives temperatures real physical inertia, so the five-minute
-projection is legitimate. The LLM does what rules cannot: it reconciles conflicting operational
-constraints, a target rack's headroom, a job's priority, an operator-added maintenance window,
-the power budget, into a single feasible action, which code validates before surfacing. When an
-engineer overrides ("that rack is in maintenance"), Marshal adds a structured constraint,
-re-solves in seconds, and applies it to every later decision. Advisory reasoning runs on NVIDIA
-Nemotron-3-Ultra-550B via Crusoe Managed Inference. Rack telemetry is simulated; the agent,
-inference, and learning are real.
-
-## Tech used (mark on the form)
-
-- Crusoe Managed Inference (OpenAI-compatible endpoint)
-- NVIDIA Nemotron-3-Ultra-550B (advisory + Why reasoning)  <- flag NVIDIA tech used
-- DeepSeek-V4-Flash (fast risk classification second opinion; code owns the authoritative triage)
-- Cloudflare Workers + Durable Objects (stateful agent + WebSocket)
-- React + TypeScript (agent console)
-- zod (typed contracts)
-
-## Links
-
-- Repo (public, MIT): https://github.com/chanjoongx/marshal
-- Live deployment (Cloudflare Worker + Durable Object, real Nemotron inference): https://marshal.neverboringnow.workers.dev
-- Demo video (1 min): TBD  <- paste YouTube-unlisted or Loom URL here before submitting
+Paste-ready material for the RAISE Summit Hackathon submission form.
 
 ## Form fields
 
-- Track: Crusoe
-- NVIDIA bonus: yes, advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B (best creative use
-  of Nemotron)
-- Cloudflare bonus: yes, deployed live on Cloudflare Workers + Durable Objects (the stateful
-  WebSocket agent runtime), calling real Crusoe inference from the Worker.
-- Built during event: yes. Built entirely during the RAISE Summit Hackathon, July 4-5 2026.
+**Team Name:** `Marshal`
+
+**Team Members:** Chanjoong Kim (`chanjoongx`), solo.
+
+**Competed:** Remotely.
+
+**Track:** Crusoe.
+
+**Public GitHub Repository:** https://github.com/chanjoongx/marshal
+
+**1 Minute Demo Video:** (record and paste the YouTube-unlisted or Loom URL; script below)
+
+**Bonus prize tracks (select only the ones actually used):**
+- [x] NVIDIA (advisory, Why, and override interpretation run on Nemotron-3-Ultra-550B)
+- [x] Cloudflare (deployed on Workers + Durable Objects, the stateful WebSocket runtime)
+- [ ] Microsoft for Startups, Nebius, OpenRouter, SUSE: not used, leave unchecked.
+
+## Project Description
+
+Marshal is a situational-awareness agent for GPU data center operations. It watches streaming rack telemetry, predicts rack-level thermal throttling about five minutes before it happens, and proposes ONE constraint-aware fix a non-technical shift engineer can approve, override, or question in the moment.
+
+Code computes every number: a first-order thermal model anchored on H100 specs gives temperatures real inertia, so the five-minute forecast is legitimate, not a straight-line guess. The language model does what rules cannot, and Marshal shows it on screen rather than claiming it. First, it keeps a job co-located with its gradient partner instead of migrating to the emptiest rack, next to the flawed pick a headroom-only rule would make. Second, it interprets a plain-language override the operator types, even one that names a rack only by description ("the rack running the checkpoint writer"), into a structured constraint, then re-solves and learns it for every later decision.
+
+Advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B (with a DeepSeek-V4-Flash triage tier) via Crusoe Managed Inference, deployed live on Cloudflare Workers and Durable Objects. Rack telemetry is simulated; the agent, the inference, and the learning are real.
+
+## Feedback fields
+
+**Crusoe:**
+Crusoe Managed Inference was the backbone and held up well for a real-time agent: OpenAI-compatible so no SDK needed, Nemotron-3-Ultra-550B and DeepSeek-V4-Flash both available and fast (advisory ~3s), and structured JSON via response_format validated cleanly. A few sharp edges cost time and a short "gotchas" note next to the model list would fix them: (1) a 412 "no available servers" on a cold model reads like a hard error but is transient, so how to detect and back off should be documented; (2) disabling thinking for clean JSON needed a top-level chat_template_kwargs (enable_thinking:false for Nemotron, thinking:false for DeepSeek), which wasn't obvious; (3) top_k returned 403; (4) exact model-string casing was ambiguous. Overall genuinely usable for production-style inference, thank you.
+
+**Cursor:**
+Cursor was great for turning a written spec into typed contracts and deterministic sim/agent code quickly, and the fast model kept the loop tight. Most useful when the spec was precise and the types were the source of truth.
+
+**Organizers:**
+Thanks for a well-run event. The track statements were concrete enough to build directly against (the Crusoe track's Statement Three is exactly what I shipped), and free access to real sponsor models made it possible to build something genuinely live, remotely. Clear judging criteria and a simple submission flow helped a lot.
+
+**Google DeepMind / Vultr:** not used in this build, leaving blank.
+
+---
+
+## 1-minute demo video
+
+Format: a title slide (about 5s), then live product footage of the deployed app (about 45s), then a closing slide (about 10s). Record the product screen silent, then lay the ElevenLabs voice narration and the two slides over it in an editor, synced to the beats below. Record with MOCK=0 (or just record the deployed URL) so the green `Nemotron · Xs` chip is on screen.
+
+### Narration (for ElevenLabs, ~60s)
+
+> [0-6s, title slide] GPU data centers lose real money to thermal throttling, and today operators mostly find out after a rack has already slowed down.
+>
+> [6-15s, app: console + surge + forecast] Marshal predicts it. A batch surge hits rack B7, and five minutes before it throttles, Marshal draws the forecast and raises one advisory.
+>
+> [15-28s, app: advisory card + rule contrast] Here's the interesting part. It doesn't move the hot job to the emptiest rack. That job has to stay co-located with its gradient partner on B3, so Marshal sends it there, and shows you the pick a plain headroom rule would have made, and why it's wrong.
+>
+> [28-42s, app: free-text override] Now the engineer knows something the telemetry doesn't. They type it in plain language: the rack running the checkpoint writer has a firmware update. Nemotron reads the live racks, resolves that to B3, and turns the sentence into a hard constraint. A regex can't do that.
+>
+> [42-50s, app: re-solve + learned chip + second event] Marshal re-solves in seconds, learns the rule, and when a second rack hits the same wall, it power-caps it on its own.
+>
+> [50-60s, closing slide] Every number is code. The model does the part rules can't: reconcile constraints, and understand language. It runs on NVIDIA Nemotron via Crusoe Managed Inference, on Cloudflare Workers. The telemetry is simulated; the agent is real.
+
+### Slides (dark, background #0a0d12 to match the app)
+
+- Title: big "MARSHAL", subtitle "predicts GPU rack thermal throttling before it happens", small "agent console for GPU data center ops, Crusoe track".
+- Closing: "Code computes every number. The LLM does what rules can't: reconcile constraints + interpret plain language." then "NVIDIA Nemotron-3-Ultra-550B + DeepSeek-V4-Flash, Crusoe Managed Inference" then "Cloudflare Workers + Durable Objects, live at marshal.neverboringnow.workers.dev".
+
+### Recording checklist
+
+- Warm the models right before recording: `npm run probe` (green) so no cold 412 mid-take.
+- 1920x1080, speed 4x, one clean take.
+- Click path: Start S1, wait for the advisory (co-location to B3 + the rule-vs-model box + the forecast), Why, Override and type "the rack running the checkpoint writer has a firmware update in 10 min" (the killer beat; fall back to "B3 has a firmware update in 10 min" if the live model stumbles), wait for the re-solve, Approve, second event (power-cap), Approve, resolution.
+- Narrate the re-solve as "a rack that avoids B3", not "the emptiest rack", since the live model may pick B15 or another high-headroom rack.
 
 ## Notes for judges (real vs simulated)
 
-- Real: the agent loop, Crusoe Nemotron inference, constraint reconciliation, override learning,
-  and the action-feasibility validation loop.
-- Simulated: rack telemetry and the cluster, via a cited first-order thermal model. A permanent
-  SIMULATED TELEMETRY badge is shown in the UI.
+- Real: the agent loop, Crusoe Nemotron inference, constraint reconciliation (including a job's co-location dependency), the plain-language override interpretation, the override-to-learning loop, and the action-feasibility validation. Live advisories carry a `Nemotron · Xs` latency chip; the offline mock is labeled `simulated model`.
+- Simulated: rack telemetry and the cluster, via a cited first-order thermal model. A permanent `SIMULATED TELEMETRY` badge is always shown.
