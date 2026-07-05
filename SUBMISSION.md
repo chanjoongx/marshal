@@ -14,7 +14,7 @@ Paste-ready material for the RAISE Summit Hackathon submission form.
 
 **Public GitHub Repository:** https://github.com/chanjoongx/marshal
 
-**1 Minute Demo Video:** (record and paste the YouTube-unlisted or Loom URL; script below)
+**1 Minute Demo Video:** (upload to YouTube, paste the URL; title, description, and narration below)
 
 **Bonus prize tracks (select only the ones actually used):**
 - [x] NVIDIA (advisory, Why, and override interpretation run on Nemotron-3-Ultra-550B)
@@ -23,11 +23,42 @@ Paste-ready material for the RAISE Summit Hackathon submission form.
 
 ## Project Description
 
-Marshal is a situational-awareness agent for GPU data center operations. It watches streaming rack telemetry, predicts rack-level thermal throttling about five minutes before it happens, and proposes ONE constraint-aware fix a non-technical shift engineer can approve, override, or question in the moment.
+Marshal is a situational-awareness agent for GPU data center operations, built on Crusoe Managed Inference. It constructs a live thermal model from streaming rack telemetry, predicts rack-level throttling about five minutes before it hits a specific rack, and surfaces one plain-language advisory a non-technical shift engineer can approve, question, or override in the moment. It is an agent, not a dashboard: the rack view is context, the proactive advisory is the product.
 
-Code computes every number: a first-order thermal model anchored on H100 specs gives temperatures real inertia, so the five-minute forecast is legitimate, not a straight-line guess. The language model does what rules cannot, and Marshal shows it on screen rather than claiming it. First, it keeps a job co-located with its gradient partner instead of migrating to the emptiest rack, next to the flawed pick a headroom-only rule would make. Second, it interprets a plain-language override the operator types, even one that names a rack only by description ("the rack running the checkpoint writer"), into a structured constraint, then re-solves and learns it for every later decision.
+Code computes every number (a first-order thermal model gives the five-minute forecast; the model never does arithmetic). The language model does what a rule cannot, shown on screen rather than claimed: it keeps a job co-located with its gradient partner instead of migrating to the emptiest rack, beside the flawed pick a headroom-only rule would make; and it interprets a free-text override, even one that names a rack only by description ("the rack running the checkpoint writer has a firmware update"), into a structured constraint it then learns from for every later decision.
 
-Advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B (with a DeepSeek-V4-Flash triage tier) via Crusoe Managed Inference, deployed live on Cloudflare Workers and Durable Objects. Rack telemetry is simulated; the agent, the inference, and the learning are real.
+Advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B with a DeepSeek-V4-Flash triage tier via Crusoe Managed Inference, deployed live on Cloudflare Workers and Durable Objects. Built entirely during RAISE Summit Hackathon 2026 (Crusoe track, solo, remote). Rack telemetry is simulated; the agent, the inference, and the learning are real.
+
+## YouTube upload
+
+**Title:**
+> Marshal — GPU rack thermal-throttling agent | RAISE Summit Hackathon 2026 (Crusoe track)
+
+**Description:**
+> Marshal is a situational-awareness agent for GPU data center operations, built entirely during RAISE Summit Hackathon 2026 (Crusoe track, solo, remote).
+>
+> It builds a live thermal model from streaming rack telemetry, predicts rack-level throttling about five minutes before it hits a specific rack, and surfaces one plain-language advisory a shift engineer can approve, question, or override in the moment. It is an agent, not a dashboard: the rack view is context, the proactive advisory is the product.
+>
+> What the language model does that a rule can't, shown on screen:
+> - Keeps a job co-located with its gradient partner instead of moving it to the emptiest rack, next to the flawed pick a headroom-only rule would make.
+> - Interprets a free-text override, even one that names a rack only by description ("the rack running the checkpoint writer has a firmware update"), into a structured constraint it then learns from for every later decision.
+>
+> Code computes every number (a first-order thermal model gives the forecast; the model never does arithmetic). Advisory reasoning runs on NVIDIA Nemotron-3-Ultra-550B with a DeepSeek-V4-Flash triage tier via Crusoe Managed Inference, deployed on Cloudflare Workers and Durable Objects.
+>
+> Rack telemetry is simulated; the agent, the inference, and the learning are real.
+>
+> Live: https://marshal.neverboringnow.workers.dev
+> Code (public): https://github.com/chanjoongx/marshal
+>
+> Crusoe track, Statement Three: an agent that builds a live situational model from streaming inputs and drives proactive actions an operator can trust, question, and override. Bonus tracks: NVIDIA (Nemotron) and Cloudflare (Workers + Durable Objects).
+
+## Rules compliance check (verify before submitting)
+
+- Public repo: github.com/chanjoongx/marshal must be PUBLIC (private = disqualified).
+- Agent, not a dashboard: framed agent-first everywhere (the proactive advisory is the product; the rack view is context). "Any project where a dashboard is the main feature" is a listed disqualifier.
+- Built during the event: solo, new, from scratch during RAISE 2026; stated in the description and video.
+- Demo over presentation (Demo = 50%, and the rules say "please do not show us a presentation"): the video leads with and is mostly the live working app; the deck is a short frame only, not half the runtime.
+- Track fit: Crusoe Statement Three, almost verbatim (predict rack-level throttling before it hits specific racks; a recommendation a shift engineer can override; learns from each override).
 
 ## Feedback fields
 
