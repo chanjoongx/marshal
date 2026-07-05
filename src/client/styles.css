@@ -5,7 +5,7 @@
   --line: #1e2733;
   --ink: #e6edf3;
   --muted: #8b98a8;
-  --dim: #5b6675;
+  --dim: #6d7888;
   --accent: #3ea6ff;
   --nominal: #2ea043;
   --watch: #d1a400;
@@ -38,7 +38,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 18px 22px 0;
 }
@@ -207,7 +207,7 @@ button.primary:hover {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 1fr);
   gap: 20px;
   flex: 1;
   align-items: start;
@@ -241,7 +241,7 @@ button.primary:hover {
   background: linear-gradient(180deg, var(--panel-2), var(--panel));
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 16px 18px;
+  padding: 20px 22px;
   position: relative;
   overflow: hidden;
 }
@@ -251,7 +251,7 @@ button.primary:hover {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
+  width: 5px;
   background: var(--accent);
 }
 .card.sev-warn::before {
@@ -259,6 +259,9 @@ button.primary:hover {
 }
 .card.sev-critical::before {
   background: var(--critical);
+}
+.card.sev-critical {
+  box-shadow: inset 0 40px 60px -40px rgba(240, 80, 58, 0.14);
 }
 .card.sev-watch::before {
   background: var(--watch);
@@ -326,9 +329,9 @@ button.primary:hover {
 }
 
 .headline {
-  font-size: 17px;
-  line-height: 1.35;
-  font-weight: 600;
+  font-size: 21px;
+  line-height: 1.25;
+  font-weight: 700;
   color: #fff;
   margin-bottom: 8px;
 }
@@ -348,12 +351,27 @@ button.primary:hover {
 .learned {
   display: inline-block;
   margin-top: 10px;
-  font-size: 12px;
+  font-size: 13px;
   color: #d7c3ff;
   background: #1a1330;
   border: 1px solid #38285e;
   border-radius: 20px;
-  padding: 4px 11px;
+  padding: 6px 13px;
+  box-shadow: 0 0 0 1px rgba(163, 113, 247, 0.18), 0 0 14px rgba(163, 113, 247, 0.22);
+  animation: learnedIn 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes learnedIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 .alts {
   margin-top: 10px;
@@ -528,6 +546,9 @@ button.primary:hover {
 .context {
   position: sticky;
   top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 .heatmap {
   background: var(--panel);
@@ -557,7 +578,7 @@ button.primary:hover {
 }
 .grid {
   display: grid;
-  gap: 6px;
+  gap: 12px;
 }
 .grid-b {
   grid-template-columns: repeat(5, 1fr);
@@ -569,12 +590,13 @@ button.primary:hover {
 .rack {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  justify-content: center;
+  gap: 2px;
   border-radius: 6px;
-  padding: 8px 6px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   background: #0f151d;
-  min-height: 52px;
+  min-height: 88px;
 }
 .rack .rid {
   font-size: 11px;
@@ -608,7 +630,20 @@ button.primary:hover {
   animation: alarm 1.4s infinite;
 }
 .rack.predicted {
-  box-shadow: inset 0 0 0 1px #7a5a1a;
+  box-shadow: 0 0 0 1.5px var(--warn), 0 0 14px rgba(232, 132, 42, 0.45);
+  animation: predictedPulse 1.6s infinite;
+}
+.rack.predicted .rproj {
+  color: var(--warn);
+}
+@keyframes predictedPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1.5px var(--warn), 0 0 10px rgba(232, 132, 42, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 1.5px var(--warn), 0 0 20px rgba(232, 132, 42, 0.6);
+  }
 }
 @keyframes alarm {
   0%,
@@ -678,8 +713,11 @@ button.primary:hover {
   border-radius: 10px;
   padding: 12px 14px;
 }
-.forecast.at-risk {
+.forecast.warn {
   border-color: #5a3616;
+}
+.forecast.crossing {
+  border-color: #6a2018;
 }
 .forecast-head {
   display: flex;
@@ -698,13 +736,36 @@ button.primary:hover {
   font-size: 12px;
   color: var(--muted);
 }
-.forecast.at-risk .fc-proj {
+.forecast.warn .fc-proj {
   color: var(--warn);
+}
+.forecast.crossing .fc-proj {
+  color: var(--critical);
+  font-weight: 700;
 }
 .forecast svg {
   width: 100%;
   height: auto;
   display: block;
+}
+.forecast .danger-band {
+  fill: var(--critical);
+  opacity: 0.12;
+}
+.forecast .area-fill {
+  stroke: none;
+}
+.forecast .area-fill.safe {
+  fill: var(--nominal);
+  opacity: 0.08;
+}
+.forecast .area-fill.warn {
+  fill: var(--warn);
+  opacity: 0.1;
+}
+.forecast .area-fill.crossing {
+  fill: var(--critical);
+  opacity: 0.1;
 }
 .forecast .throttle-line {
   stroke: var(--critical);
@@ -714,7 +775,8 @@ button.primary:hover {
 }
 .forecast .throttle-text {
   fill: var(--critical);
-  font-size: 9px;
+  font-size: 6px;
+  font-weight: 700;
   opacity: 0.9;
 }
 .forecast .temp-line {
@@ -728,17 +790,29 @@ button.primary:hover {
 .forecast .proj-line.crossing {
   stroke: var(--critical);
 }
+.forecast .proj-line.warn {
+  stroke: var(--warn);
+}
 .forecast .proj-line.safe {
   stroke: var(--nominal);
 }
 .forecast .now-dot {
   fill: var(--accent);
 }
+.forecast .proj-dot {
+  filter: drop-shadow(0 0 6px currentColor);
+}
 .forecast .proj-dot.crossing {
   fill: var(--critical);
+  color: var(--critical);
+}
+.forecast .proj-dot.warn {
+  fill: var(--warn);
+  color: var(--warn);
 }
 .forecast .proj-dot.safe {
   fill: var(--nominal);
+  color: var(--nominal);
 }
 .forecast .axis-label {
   fill: var(--dim);
@@ -769,7 +843,8 @@ button.primary:hover {
   color: #d9b48a;
 }
 .rp-body {
-  color: var(--muted);
-  font-size: 12.5px;
+  color: var(--ink);
+  opacity: 0.86;
+  font-size: 13px;
   line-height: 1.45;
 }

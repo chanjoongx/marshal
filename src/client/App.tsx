@@ -126,12 +126,11 @@ export function App() {
           ) : null}
 
           {resolution ? <ResolutionCard resolution={resolution} /> : null}
-
-          <FeedLog records={world?.advisories_recent ?? []} activeId={advisory?.id} />
         </section>
 
         <aside className="context" aria-label="rack view">
           <Heatmap world={world} />
+          <FeedLog records={world?.advisories_recent ?? []} activeId={advisory?.id} />
         </aside>
       </main>
 
@@ -315,10 +314,37 @@ function Heatmap(props: { world: WorldState | null }) {
   );
 }
 
+/** Map a temperature to a NOC heat color: deep green (cool) -> amber -> red (throttle). */
+function heatColor(temp: number): string {
+  const stops: Array<{ t: number; c: [number, number, number] }> = [
+    { t: 58, c: [22, 64, 38] },
+    { t: 70, c: [112, 78, 18] },
+    { t: 84, c: [150, 42, 30] },
+  ];
+  const lo = stops[0];
+  const hi = stops[stops.length - 1];
+  const clamped = Math.max(lo.t, Math.min(hi.t, temp));
+  let a = lo;
+  let b = hi;
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (clamped >= stops[i].t && clamped <= stops[i + 1].t) {
+      a = stops[i];
+      b = stops[i + 1];
+      break;
+    }
+  }
+  const f = b.t === a.t ? 0 : (clamped - a.t) / (b.t - a.t);
+  const mix = (i: number) => Math.round(a.c[i] + (b.c[i] - a.c[i]) * f);
+  return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+}
+
 function RackCell(props: { rack: RackState }) {
   const r = props.rack;
   const proj = r.projected_temp_5m;
   const willThrottle = 84 - proj <= 15 && r.band === "nominal";
+  // Tile heat is driven by whichever is hotter, now or the 5-min projection, so a rack heading
+  // toward throttle (B7) reads red even while its current temperature still looks calm.
+  const heat = heatColor(Math.max(r.gpu_temp_c, r.projected_temp_5m));
   return (
     <div
       className={`rack band-${r.band} ${willThrottle ? "predicted" : ""}`}
@@ -326,6 +352,7 @@ function RackCell(props: { rack: RackState }) {
       data-temp={r.gpu_temp_c}
       data-projected={r.projected_temp_5m}
       data-band={r.band}
+      style={{ background: heat }}
       title={`${r.id}: ${r.gpu_temp_c}C now, ${proj}C projected, headroom ${r.headroom_w}W`}
     >
       <span className="rid">{r.id}</span>
@@ -344,7 +371,7 @@ function RackCell(props: { rack: RackState }) {
 function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
   const { history, throttle } = props;
   const W = 344;
-  const H = 132;
+  const H = 140;
   const padL = 8;
   const padR = 26;
   const padT = 14;
@@ -352,8 +379,8 @@ function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
   const last = history[history.length - 1];
   const tMin = history[0].t;
   const tMax = last.t + SIM.PROJECTION_HORIZON_S;
-  const yMin = 55;
-  const yMax = 92;
+  const yMin = 60;
+  const yMax = 88;
   const sx = (t: number) => padL + ((W - padL - padR) * (t - tMin)) / Math.max(1, tMax - tMin);
   const sy = (v: number) => padT + (H - padT - padB) * (1 - (Math.min(yMax, Math.max(yMin, v)) - yMin) / (yMax - yMin));
   const tempPath = history.map((p, i) => `${i ? "L" : "M"}${sx(p.t).toFixed(1)},${sy(p.temp).toFixed(1)}`).join(" ");
@@ -363,8 +390,17 @@ function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
   const projY = sy(last.proj);
   const throttleY = sy(throttle);
   const willCross = last.proj >= throttle;
+  // Three-state climb: green while safely below throttle, amber within 6C of it, red at/over it.
+  const margin = throttle - last.proj;
+  const state = margin <= 0 ? "crossing" : margin <= 6 ? "warn" : "safe";
+  // Area under the measured + projected line, closed down to the baseline, tinted by state.
+  const areaPath =
+    tempPath +
+    ` L${projX.toFixed(1)},${projY.toFixed(1)}` +
+    ` L${projX.toFixed(1)},${(H - padB).toFixed(1)}` +
+    ` L${padL.toFixed(1)},${(H - padB).toFixed(1)} Z`;
   return (
-    <div className={`forecast ${willCross ? "at-risk" : "safe"}`} data-testid="forecast-chart">
+    <div className={`forecast ${state}`} data-testid="forecast-chart">
       <div className="forecast-head">
         <span className="fc-title">MARSHAL FORECAST · {last.id}</span>
         <span className="fc-proj">
@@ -373,14 +409,16 @@ function ForecastChart(props: { history: ForecastPoint[]; throttle: number }) {
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`temperature forecast for ${last.id}`}>
+        <rect className="danger-band" x={padL} y={padT} width={W - padL - padR} height={Math.max(0, throttleY - padT)} />
+        <path className={`area-fill ${state}`} d={areaPath} />
         <line className="throttle-line" x1={padL} y1={throttleY} x2={W - padR} y2={throttleY} />
-        <text className="axis-label throttle-text" x={padL} y={throttleY - 5}>
-          {throttle}&deg; throttle line
+        <text className="axis-label throttle-text" x={padL + 1} y={throttleY - 4}>
+          {throttle}
         </text>
         <path className="temp-line" d={tempPath} fill="none" />
-        <line className={`proj-line ${willCross ? "crossing" : "safe"}`} x1={nowX} y1={nowY} x2={projX} y2={projY} />
+        <line className={`proj-line ${state}`} x1={nowX} y1={nowY} x2={projX} y2={projY} />
         <circle className="now-dot" cx={nowX} cy={nowY} r={3} />
-        <circle className={`proj-dot ${willCross ? "crossing" : "safe"}`} cx={projX} cy={projY} r={3} />
+        <circle className={`proj-dot ${state}`} cx={projX} cy={projY} r={4.5} />
         <text className="axis-label proj-text" x={projX - 4} y={projY - 6} textAnchor="end">
           {Math.round(last.proj)}&deg;
         </text>
