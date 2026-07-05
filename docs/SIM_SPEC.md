@@ -124,9 +124,9 @@ headroom is deliberately below B15's `10800 W`, so a headroom-only rule would ne
 the surge job `job-4471` lands co-located with `job-4470` (section 6), the correct target is B3,
 not the emptiest rack, and reconciling that dependency is the model's real job. In probe testing
 the live Nemotron model picks B3 for the co-location (3/3 runs, `scripts/probe_reasoning.mjs`)
-and adapts to another rack once B3 is excluded; the deterministic MockProvider does the same,
-co-locating on B3 then re-solving to B15 after the override. Either way the override-and-learn
-loop is identical.
+and power-caps B7 once B3 is excluded (co-location no longer restorable); the deterministic
+MockProvider does the same, co-locating on B3 then power-capping B7 after the override. Either way
+the override-and-learn loop is identical.
 
 ## 5. Determinism
 
@@ -175,9 +175,9 @@ Action effects the sim MUST model, so approvals visibly bend the curve:
   rule would grab B15 and break the gradient exchange; the advisory surfaces that contrast on
   screen (code computes it with `naiveHeadroomPick`, only when the co-location was actually
   achievable). The operator then overrides with something telemetry cannot see: B3 has a firmware
-  update in 10 minutes (an `exclude_rack B3` constraint). Co-location is now impossible, so the
-  agent re-solves to B15; with the dependency gone, headroom is the right criterion, and a
-  healthy rack receiving `job-4471` settles around 54 C, well within nominal. The learned
+  update in 10 minutes (an `exclude_rack B3` constraint). Co-location is now impossible, so migrating
+  job-4471 anywhere fixes nothing; the agent re-solves by power-capping B7, a non-destructive clamp
+  that holds it under its 84 C throttle without shedding the high-priority job. The learned
   constraint persists for every later advisory (the UI shows a "learned: avoids B3" chip).
 
 Second pressure event (drives the second advisory that shows learning):
