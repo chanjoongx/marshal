@@ -239,8 +239,9 @@ plain language, not a form.
    to B15. The new advisory MUST set `learned_from` to the new constraint's id, and the UI
    renders a "learned: avoids rack B3" chip.
 7. Every LATER advisory that would have been shaped by that constraint also sets `learned_from`
-   to it and avoids the excluded target without being told again (the second S1 event proves
-   this: A5 spikes with its own co-location on B3, and the agent routes around B3 on its own).
+   to it and honors the excluded target without being told again (the second S1 event proves
+   this: A5 spikes with its own co-location on the excluded B3, so the agent power-caps A5 on its
+   own rather than migrate and break more co-location).
 
 This closed loop, natural-language interpretation plus a code-validated structured constraint
 injected into every snapshot plus reconciliation plus the learned chip, is what makes "the operator

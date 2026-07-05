@@ -288,8 +288,8 @@ function pad(v: string | number, n: number): string {
  * Deterministic outputs keyed to S1 stages, so the app and smoke test run offline.
  * Stage decision from the snapshot alone:
  *   - trigger "why"                       -> canned Why text
- *   - focus on A-row                      -> second-event advisory, routes around B3
- *   - focus B7 + exclude_rack B3 active   -> re-solved advisory to B15, learned_from set
+ *   - focus on A-row                      -> second-event advisory, power-cap A5 (B3 excluded)
+ *   - focus B7 + exclude_rack B3 active   -> re-solved advisory, power-cap B7, learned_from set
  *   - focus B7, no such constraint        -> first WARN advisory, co-locates on B3
  */
 export class MockProvider implements Provider {

@@ -236,7 +236,7 @@ describe("S1 override and learning path (MockProvider)", () => {
     expect(a1.rule_pick?.flaw).toContain("co-location");
 
     // 2. Override in plain language: the mock interprets it into exclude_rack B3. Co-location is
-    // lost, so re-solve to B15, learned rule set.
+    // lost, so the re-solve power-caps B7 (a non-destructive clamp, not a migrate), learned rule set.
     const a2 = await agent.handleOverride(sim, session, a1.id, "B3 has a firmware update in 10 min");
     expect(a2).not.toBeNull();
     expect(a2!.action.type).toBe("power_cap"); // co-location blocked -> non-destructive clamp, not a migrate
