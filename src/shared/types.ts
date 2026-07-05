@@ -122,6 +122,7 @@ export type Constraint = z.infer<typeof ConstraintSchema>;
 
 export const ActionTypeSchema = z.enum([
   "migrate_job",
+  "power_cap", // non-destructive DVFS: clamp a rack's power/clock, shed nothing (cap_w = ceiling W)
   "cap_intake",
   "rebalance_row",
   "hold",
@@ -193,7 +194,7 @@ export const AdvisoryRecordSchema = z.object({
 export type AdvisoryRecord = z.infer<typeof AdvisoryRecordSchema>;
 
 /** An approved action's ongoing effect on the sim (what actually bends the curve). */
-export const EffectTypeSchema = z.enum(["job_migrated", "intake_capped", "row_rebalanced"]);
+export const EffectTypeSchema = z.enum(["job_migrated", "intake_capped", "power_capped", "row_rebalanced"]);
 export type EffectType = z.infer<typeof EffectTypeSchema>;
 
 export const ActiveEffectSchema = z.object({

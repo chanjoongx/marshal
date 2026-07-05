@@ -90,6 +90,7 @@ interface SimRack {
   inlet: number; // cosmetic, seeded jitter around INLET_TEMP_C
   capped: boolean;
   capW: number | null;
+  dvfsCapW: number | null; // non-destructive DVFS power ceiling (null = full clock, sheds nothing)
 }
 
 const PRIORITY_RANK = { low: 0, normal: 1, high: 2 } as const;
@@ -102,6 +103,13 @@ function rackDraw(r: SimRack): number {
   let sum = 0;
   for (const j of r.jobs) sum += j.power_w;
   return sum;
+}
+
+/** Power actually drawn, and turned to heat, after any DVFS clock cap. A power_cap clamps this
+ *  ceiling without evicting jobs; they keep running at a lower clock. */
+function effectivePower(r: SimRack): number {
+  const raw = rackDraw(r);
+  return r.dvfsCapW == null ? raw : Math.min(raw, r.dvfsCapW);
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -151,7 +159,7 @@ export class Sim {
     const racks: SimRack[] = [];
     const mk = (row: string, pos: number, cap: number, jobs: Job[]): SimRack => {
       const inlet = SIM.INLET_TEMP_C + (rng() * 2 - 1) * 0.2; // +/-0.2 C cosmetic jitter
-      return { id: `${row}${pos}`, row, position: pos, cap, temp: 0, jobs, inlet, capped: false, capW: null };
+      return { id: `${row}${pos}`, row, position: pos, cap, temp: 0, jobs, inlet, capped: false, capW: null, dvfsCapW: null };
     };
 
     // Aisle B: main GPU compute, B1..B15. B7 is the marginal-cooling hero rack.
@@ -191,7 +199,7 @@ export class Sim {
       racks.push(mk("A", p, HEALTHY_CAP, jobs));
     }
 
-    for (const r of racks) r.temp = steadyState(rackDraw(r), r.cap);
+    for (const r of racks) r.temp = steadyState(effectivePower(r), r.cap);
 
     this.racks = racks;
     this.byId = new Map(racks.map((r) => [r.id, r]));
@@ -204,7 +212,7 @@ export class Sim {
   /** Advance one whole sim-second: step temperature, then apply scripted events. */
   private advanceOneSecond(): void {
     for (const r of this.racks) {
-      const steady = steadyState(rackDraw(r), r.cap);
+      const steady = steadyState(effectivePower(r), r.cap);
       r.temp = stepTemp(r.temp, steady, SIM.TICK_S);
     }
     this.simTime += 1;
@@ -272,6 +280,9 @@ export class Sim {
       const rackId = action.params.from_rack ?? action.params.to_rack;
       const capW = action.params.cap_w ?? (rackId ? this.rack(rackId)?.cap ?? 0 : 0);
       if (rackId) out.push(...this.cap(rackId, capW, advisoryId));
+    } else if (action.type === "power_cap") {
+      const rackId = action.params.from_rack ?? action.params.to_rack;
+      if (rackId) out.push(...this.powerCap(rackId, action.params.cap_w, advisoryId));
     } else if (action.type === "rebalance_row" && action.params.row) {
       const hottest = this.racks
         .filter((r) => r.row === action.params.row)
@@ -310,7 +321,7 @@ export class Sim {
     r.capped = true;
     r.capW = capW;
     while (true) {
-      const steady = steadyState(rackDraw(r), r.cap);
+      const steady = steadyState(effectivePower(r), r.cap);
       const proj = projectTemp(r.temp, steady);
       if (SIM.THROTTLE_TEMP_C - proj > SIM.BAND_WATCH_MARGIN_C) break;
       const sheddable = r.jobs
@@ -336,10 +347,42 @@ export class Sim {
     ];
   }
 
+  /**
+   * Non-destructive DVFS power cap: clamp the rack's effective power to `capW` (or a computed level
+   * that clears the nominal margin), evicting nothing. Jobs keep running at a lower clock, the least
+   * disruptive way to hold a rack under throttle for an imminent risk.
+   */
+  private powerCap(rackId: string, capW: number | undefined, advisoryId: string): ActiveEffect[] {
+    const r = this.rack(rackId);
+    if (!r) return [];
+    const raw = rackDraw(r);
+    r.dvfsCapW = capW != null && capW < raw ? capW : this.safeDvfsLevel(r);
+    return [
+      {
+        id: `eff-pcap-${rackId}-${Math.round(this.simTime)}`,
+        type: "power_capped",
+        applied_ts: this.simTime,
+        advisory_id: advisoryId,
+        params: { from_rack: rackId, cap_w: r.dvfsCapW },
+      },
+    ];
+  }
+
+  /** The lightest clock cap (highest effective power) that keeps the rack's projection nominal. */
+  private safeDvfsLevel(r: SimRack): number {
+    let level = rackDraw(r);
+    while (level > 200) {
+      const proj = projectTemp(r.temp, steadyState(level, r.cap));
+      if (SIM.THROTTLE_TEMP_C - proj > SIM.BAND_WATCH_MARGIN_C) break;
+      level -= 200;
+    }
+    return level;
+  }
+
   /* --------------------------------- published ------------------------------- */
 
   private toRackState(r: SimRack): RackState {
-    const power = rackDraw(r);
+    const power = effectivePower(r);
     const steady = steadyState(power, r.cap);
     const ttt = timeToThrottle(r.temp, steady);
     return {

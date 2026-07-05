@@ -206,6 +206,21 @@ describe("action effects on temperature", () => {
     expect(b15.band).toBe("nominal");
     expect(b15.headroom_w).toBe(9400);
   });
+
+  it("power-caps a rack non-destructively: temperature drops but no job is shed", () => {
+    const sim = new Sim();
+    sim.start("S1");
+    sim.advance(210);
+    const before = sim.getRackStates().find((r) => r.id === "B7")!;
+    const jobsBefore = before.active_jobs.length;
+    sim.applyAction({ type: "power_cap", params: { from_rack: "B7" }, one_line: "" }, "adv-test");
+    sim.advance(120);
+    const after = sim.getRackStates().find((r) => r.id === "B7")!;
+    expect(band(after.projected_temp_5m)).toBe("nominal"); // no longer projected to throttle
+    expect(after.gpu_temp_c).toBeLessThan(before.gpu_temp_c); // and actively cooling
+    expect(after.active_jobs.length).toBe(jobsBefore); // nothing shed, non-destructive
+    expect(after.power_draw_w).toBeLessThan(before.power_draw_w); // effective power reduced by the clamp
+  });
 });
 
 describe("scheduler + world", () => {

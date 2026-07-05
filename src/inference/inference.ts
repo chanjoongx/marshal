@@ -306,17 +306,18 @@ export class MockProvider implements Provider {
     const excludeB3 = snapshot.constraints.find((c) => c.kind === "exclude_rack" && c.target === "B3");
     const base = { id: `adv-${Math.round(snapshot.sim_time_s)}-${focusId}`, ts: snapshot.sim_time_s, origin: "mock" as const };
 
-    // Second event: an A-row rack spikes; apply the learned "avoid B3" rule automatically.
+    // Second event: an A-row rack spikes; B3 is excluded (learned), so its job cannot co-locate
+    // there. The least disruptive move is a non-destructive power cap, not a migration.
     if (focusId.startsWith("A")) {
-      const job = focusJob(snapshot, focusId) ?? { id: "job-4820", power_w: 700, priority: "high" as const, sla: "" };
+      const job = focusJob(snapshot, focusId) ?? { id: "job-4820", power_w: 1400, priority: "high" as const, sla: "" };
       return {
         ...base,
         severity: "warn",
         area: `row ${focusId[0]}`,
-        headline: `${focusId} projected to hit 84C throttle, routing around B3`,
-        rationale: `${focusId} is projected to reach ${round(snapshot.racks.find((r) => r.id === focusId)?.projected_temp_5m ?? 84)}C within 5 minutes with negative headroom. B3 stays excluded for its firmware window, so ${focusId} offloads to B14 which has headroom.`,
-        action: { type: "migrate_job", params: { job_id: job.id, from_rack: focusId, to_rack: "B14", cap_w: 11340 }, one_line: `Migrate ${job.id} from ${focusId} to B14, avoid B3` },
-        alternatives: [{ type: "cap_intake", params: { from_rack: focusId }, one_line: `Cap ${focusId} intake, shed low-priority jobs` }],
+        headline: `${focusId} hits 84C throttle in ~5 min, power-capping (B3 excluded, cannot co-locate)`,
+        rationale: `${focusId} is projected to cross 84C within 5 minutes. ${job.id} needs its co-location partner job-4470 on B3, but B3 stays excluded for its firmware window, so migrating there is out. A non-destructive power cap holds ${focusId} under throttle without shedding the job or breaking more co-location.`,
+        action: { type: "power_cap", params: { from_rack: focusId }, one_line: `Power-cap ${focusId} to hold under throttle, leave B3 alone` },
+        alternatives: [{ type: "migrate_job", params: { job_id: job.id, from_rack: focusId, to_rack: "B14" }, one_line: `Migrate ${job.id} to B14 instead (breaks co-location)` }],
         confidence: 0.8,
         learned_from: excludeB3 ? excludeB3.id : null,
       };
@@ -332,7 +333,10 @@ export class MockProvider implements Provider {
         headline: "B3 excluded for firmware, co-location lost, re-solving B7 to B15",
         rationale: "B3 is excluded by your firmware constraint, so job-4471 cannot co-locate with job-4470. With co-location no longer possible, B7 offloads to B15, the rack with the most headroom (10800W), and caps its intake.",
         action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "Migrate job-4471 to B15 (co-location lost), cap B7 intake" },
-        alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
+        alternatives: [
+        { type: "power_cap", params: { from_rack: "B7" }, one_line: "Power-cap B7 now to hold under throttle, non-destructive" },
+        { type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" },
+      ],
         confidence: 0.78,
         learned_from: excludeB3.id,
       };
@@ -346,7 +350,10 @@ export class MockProvider implements Provider {
       headline: "B7 hits 84C throttle in ~5 min, migrate job-4471 to its partner on B3",
       rationale: "B7 draw 12600W exceeds its 11340W cooling capacity by 1260W, so it will cross its 84C throttle within about 5 minutes. job-4471 must co-locate with job-4470 on B3, which has 6200W headroom, so it goes there rather than the emptiest rack.",
       action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B3", cap_w: 11340 }, one_line: "Migrate job-4471 to B3 to join job-4470, cap B7 intake" },
-      alternatives: [{ type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" }],
+      alternatives: [
+        { type: "power_cap", params: { from_rack: "B7" }, one_line: "Power-cap B7 now to hold under throttle, non-destructive" },
+        { type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" },
+      ],
       confidence: 0.85,
       learned_from: null,
     };
@@ -558,13 +565,14 @@ export const ADVISORY_SYSTEM = `You are Marshal, a situational-awareness agent f
 
 Rules:
 - Output ONLY minified JSON matching this schema, no prose, no markdown:
-  {"severity":"watch|warn|critical","area":string,"headline":string(<=90 chars),"rationale":string(2 sentences, cite >=2 numbers from the snapshot),"action":{"type":"migrate_job|cap_intake|rebalance_row|hold|no_action","params":{"job_id"?:string,"from_rack"?:string,"to_rack"?:string,"cap_w"?:number,"row"?:string},"one_line":string(<=90 chars)},"alternatives":[up to 2 action objects],"confidence":number 0..1,"learned_from":string|null}
+  {"severity":"watch|warn|critical","area":string,"headline":string(<=90 chars),"rationale":string(2 sentences, cite >=2 numbers from the snapshot),"action":{"type":"migrate_job|power_cap|cap_intake|rebalance_row|hold|no_action","params":{"job_id"?:string,"from_rack"?:string,"to_rack"?:string,"cap_w"?:number,"row"?:string},"one_line":string(<=90 chars)},"alternatives":[up to 2 action objects],"confidence":number 0..1,"learned_from":string|null}
 - The action MUST satisfy every active constraint. Never target an excluded rack or an avoided row. Never move a pinned job.
 - The target of a migrate MUST have headroom_w >= the job's power_w and stay within the power budget (draw_w + job power <= budget_w).
 - CO-LOCATION: if the job has a co_located_with partner, migrate it to the rack HOSTING that partner, even if another rack has more headroom. Breaking co-location severely degrades the job, so never pick a rack just because it has the most headroom. If that rack is excluded by an operator constraint, pick the next-best feasible rack and say co-location could not be preserved.
 - If an operator-added constraint shaped your choice, set learned_from to that constraint id (e.g. "c1"). Otherwise null.
 - Thermal throttling is driven by COOLING, not the power budget: a rack heads to throttle when its draw exceeds its cooling capacity, i.e. headroom_w is negative. When you explain a thermal risk, cite the rack's cooling headroom (its draw versus its cooling capacity, e.g. "draw exceeds cooling capacity by N W"), never the power budget. The power budget is a separate electrical ceiling used only as a feasibility check on a migrate target.
 - When a rack is over its cooling capacity, migrate its HIGHEST-priority job to a feasible target and cap the source rack intake to shed low-priority load. State both in one_line when both are needed.
+- LEVER ORDER: the least disruptive move for an imminent throttle is a power_cap, a non-destructive DVFS clamp on the rack's power/clock that sheds nothing and buys time; prefer it for pure thermal relief. Migrate a job only when a constraint requires the job to move (for example to restore a co-location), where the migrate also relieves the source. cap_intake sheds low-priority jobs and is more disruptive than a power_cap, so use it only when you must free the rack.
 - Terse operations English. No exclamation marks.`;
 
 export const WHY_SYSTEM = `You are Marshal explaining a recommendation to a shift engineer. In at most 3 sentences, justify the current advisory using ONLY numbers from the snapshot (current temp, projected temp, time to throttle, headroom). Cite specific values. Do NOT propose a new action or add new advice. Terse operations English, no exclamation marks.`;

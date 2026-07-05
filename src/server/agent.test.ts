@@ -253,10 +253,12 @@ describe("S1 override and learning path (MockProvider)", () => {
     const projAfter = sim.getRackStates().find((r) => r.id === "B7")!.projected_temp_5m;
     expect(projAfter).toBeLessThan(projBefore);
 
-    // 4. Second event: A-row spikes with its own co-location on B3; the agent avoids B3 (learned).
+    // 4. Second event: A-row spikes; B3 is excluded (learned), so it cannot co-locate there, and the
+    // agent power-caps the rack non-destructively instead of migrating and breaking co-location.
     sim.advance(200); // past the A-row surge at t=300
     const a3 = (await agent.tick(sim, session)).advisory!;
-    expect(a3.action.params.to_rack).not.toBe("B3");
+    expect(a3.action.type).toBe("power_cap");
+    expect(a3.action.params.to_rack).toBeUndefined();
     expect(a3.learned_from).toBe("c1");
   });
 
