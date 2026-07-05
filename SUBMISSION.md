@@ -58,7 +58,7 @@ Format: a title slide (about 5s), then live product footage of the deployed app 
 >
 > [28-42s, app: free-text override] Now the engineer knows something the telemetry doesn't. They type it in plain language: the rack running the checkpoint writer has a firmware update. Nemotron reads the live racks, resolves that to B3, and turns the sentence into a hard constraint. A regex can't do that.
 >
-> [42-50s, app: re-solve + learned chip + second event] Marshal re-solves in seconds, learns the rule, and when a second rack hits the same wall, it power-caps it on its own.
+> [42-50s, app: re-solve + learned chip + second event] Marshal re-solves in seconds, learns the rule, and when a second rack hits the same wall, it handles that one on its own, applying what you just taught it.
 >
 > [50-60s, closing slide] Every number is code. The model does the part rules can't: reconcile constraints, and understand language. It runs on NVIDIA Nemotron via Crusoe Managed Inference, on Cloudflare Workers. The telemetry is simulated; the agent is real.
 
@@ -67,12 +67,12 @@ Format: a title slide (about 5s), then live product footage of the deployed app 
 - Title: big "MARSHAL", subtitle "predicts GPU rack thermal throttling before it happens", small "agent console for GPU data center ops, Crusoe track".
 - Closing: "Code computes every number. The LLM does what rules can't: reconcile constraints + interpret plain language." then "NVIDIA Nemotron-3-Ultra-550B + DeepSeek-V4-Flash, Crusoe Managed Inference" then "Cloudflare Workers + Durable Objects, live at marshal.neverboringnow.workers.dev".
 
-### Recording checklist
+### Recording checklist (verified live end to end with scripts/drive.mjs, both events)
 
 - Warm the models right before recording: `npm run probe` (green) so no cold 412 mid-take.
-- 1920x1080, speed 4x, one clean take.
-- Click path: Start S1, wait for the advisory (co-location to B3 + the rule-vs-model box + the forecast), Why, Override and type "the rack running the checkpoint writer has a firmware update in 10 min" (the killer beat; fall back to "B3 has a firmware update in 10 min" if the live model stumbles), wait for the re-solve, Approve, second event (power-cap), Approve, resolution.
-- Narrate the re-solve as "a rack that avoids B3", not "the emptiest rack", since the live model may pick B15 or another high-headroom rack.
+- Open the deployed URL fresh, 1920x1080. Speed 8x reaches the action fast; drop to 1x while you type the override so the sim does not race ahead, then back to 8x.
+- Click path: Start S1 -> first advisory in ~15-20s (co-location to B3, the rule-vs-model box, the climbing forecast) -> Why -> Override, type "the rack running the checkpoint writer has a firmware update in 10 min" (the killer beat; fall back to "B3 has a firmware update in 10 min" if the live model stumbles) -> the re-solve appears with a learned chip -> Approve and the forecast bends from ~83C back under the nominal line (~69C) with a resolution card -> ~30s later a second rack (A5) hits the same wall and Marshal handles it honoring the learned rule -> Approve -> resolution.
+- The re-solve and the second event may show a power cap OR a migration live (the model varies run to run); both correctly avoid B3 and bend the curve, so narrate action-agnostically ("handles it", "holds it under throttle"), never "the emptiest rack".
 
 ## Notes for judges (real vs simulated)
 
