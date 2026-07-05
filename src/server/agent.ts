@@ -153,6 +153,15 @@ export class Agent {
     }
     const rp = this.computeRulePick(snap, out);
     if (rp) out = { ...out, rule_pick: rp };
+    // A power_cap or cap_intake acts on a rack, but the live model sometimes omits from_rack;
+    // backfill it with the focus rack so an approve is never a silent no-op.
+    if (
+      (out.action.type === "power_cap" || out.action.type === "cap_intake") &&
+      !out.action.params.from_rack &&
+      snap.focus_rack_id
+    ) {
+      out = { ...out, action: { ...out.action, params: { ...out.action.params, from_rack: snap.focus_rack_id } } };
+    }
     return out;
   }
 

@@ -51,12 +51,12 @@ test("S1: warns before throttle, learns the override, bends the curve", async ({
   await page.screenshot({ path: SHOT_DIR + "/shot-override.png" });
   await page.getByTestId("override-submit").click();
 
-  // the re-solved advisory shows the learned chip and does NOT target B3
+  // the re-solved advisory shows the learned chip; co-location is lost so it power-caps B7 (not B3)
   await expect(page.getByTestId("advisory-learned")).toBeVisible({ timeout: 20_000 });
   const action = page.getByTestId("advisory-action");
   await expect(action).toBeVisible();
   await expect(action).not.toContainText("B3");
-  await expect(action).toContainText("B15");
+  await expect(action).toContainText("Power-cap B7");
   await page.screenshot({ path: SHOT_DIR + "/shot-2-resolve.png" });
 
   // Approve bends B7's projected temperature down

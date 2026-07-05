@@ -239,8 +239,8 @@ describe("S1 override and learning path (MockProvider)", () => {
     // lost, so re-solve to B15, learned rule set.
     const a2 = await agent.handleOverride(sim, session, a1.id, "B3 has a firmware update in 10 min");
     expect(a2).not.toBeNull();
-    expect(a2!.action.params.to_rack).toBe("B15");
-    expect(a2!.action.params.to_rack).not.toBe("B3");
+    expect(a2!.action.type).toBe("power_cap"); // co-location blocked -> non-destructive clamp, not a migrate
+    expect(a2!.action.params.from_rack).toBe("B7");
     expect(a2!.learned_from).toBe("c1");
     expect(a2!.rule_pick).toBeUndefined(); // co-location no longer achievable -> no contrast
     expect(a2!.origin).toBe("mock"); // the re-solve is the offline mock, not the auto fallback

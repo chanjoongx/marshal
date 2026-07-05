@@ -323,20 +323,22 @@ export class MockProvider implements Provider {
       };
     }
 
-    // B7 re-solve after the operator excluded B3: co-location is no longer achievable, so with
-    // that constraint gone headroom is the right criterion and B15 (the emptiest rack) is correct.
+    // B7 re-solve after the operator excluded B3: co-location can no longer be restored, so
+    // migrating job-4471 anywhere fixes nothing. The least disruptive move is a non-destructive
+    // power cap that holds B7 under throttle without shedding the high-priority job (same lever the
+    // second event uses, since both are the co-location-blocked case).
     if (excludeB3) {
       return {
         ...base,
         severity: "warn",
         area: "B7",
-        headline: "B3 excluded for firmware, co-location lost, re-solving B7 to B15",
-        rationale: "B3 is excluded by your firmware constraint, so job-4471 cannot co-locate with job-4470. With co-location no longer possible, B7 offloads to B15, the rack with the most headroom (10800W), and caps its intake.",
-        action: { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15", cap_w: 11340 }, one_line: "Migrate job-4471 to B15 (co-location lost), cap B7 intake" },
+        headline: "B3 excluded for firmware, co-location lost, power-capping B7 to hold",
+        rationale: "B3 is excluded by your firmware constraint, so job-4471 cannot co-locate with job-4470, and migrating it elsewhere restores nothing. A non-destructive power cap holds B7 under its 84C throttle without shedding the high-priority job or moving stateful work.",
+        action: { type: "power_cap", params: { from_rack: "B7" }, one_line: "Power-cap B7 to hold under throttle (co-location lost), non-destructive" },
         alternatives: [
-        { type: "power_cap", params: { from_rack: "B7" }, one_line: "Power-cap B7 now to hold under throttle, non-destructive" },
-        { type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" },
-      ],
+          { type: "migrate_job", params: { job_id: "job-4471", from_rack: "B7", to_rack: "B15" }, one_line: "Migrate job-4471 to B15 instead (co-location still lost, keeps full clock)" },
+          { type: "cap_intake", params: { from_rack: "B7" }, one_line: "Cap B7 intake and shed low-priority batch jobs" },
+        ],
         confidence: 0.78,
         learned_from: excludeB3.id,
       };

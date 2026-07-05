@@ -88,8 +88,6 @@ interface SimRack {
   temp: number; // current rack package temperature (heatsink + coolant thermal mass, tau ~220s)
   jobs: Job[]; // power_draw_w == sum of job power_w (total rack electrical power, all -> heat)
   inlet: number; // cosmetic, seeded jitter around INLET_TEMP_C
-  capped: boolean;
-  capW: number | null;
   dvfsCapW: number | null; // non-destructive DVFS power ceiling (null = full clock, sheds nothing)
 }
 
@@ -159,7 +157,7 @@ export class Sim {
     const racks: SimRack[] = [];
     const mk = (row: string, pos: number, cap: number, jobs: Job[]): SimRack => {
       const inlet = SIM.INLET_TEMP_C + (rng() * 2 - 1) * 0.2; // +/-0.2 C cosmetic jitter
-      return { id: `${row}${pos}`, row, position: pos, cap, temp: 0, jobs, inlet, capped: false, capW: null, dvfsCapW: null };
+      return { id: `${row}${pos}`, row, position: pos, cap, temp: 0, jobs, inlet, dvfsCapW: null };
     };
 
     // Aisle B: main GPU compute, B1..B15. B7 is the marginal-cooling hero rack.
@@ -318,8 +316,6 @@ export class Sim {
   private cap(rackId: string, capW: number, advisoryId: string): ActiveEffect[] {
     const r = this.rack(rackId);
     if (!r) return [];
-    r.capped = true;
-    r.capW = capW;
     while (true) {
       const steady = steadyState(effectivePower(r), r.cap);
       const proj = projectTemp(r.temp, steady);
@@ -355,8 +351,10 @@ export class Sim {
   private powerCap(rackId: string, capW: number | undefined, advisoryId: string): ActiveEffect[] {
     const r = this.rack(rackId);
     if (!r) return [];
-    const raw = rackDraw(r);
-    r.dvfsCapW = capW != null && capW < raw ? capW : this.safeDvfsLevel(r);
+    // Clamp to a level that keeps the projection nominal; honor a tighter operator cap_w if given,
+    // but never accept a looser one (the model sometimes suggests exactly the cooling capacity,
+    // which only holds at the throttle line). Guarantees the curve bends back to nominal.
+    r.dvfsCapW = Math.min(capW ?? Infinity, this.safeDvfsLevel(r));
     return [
       {
         id: `eff-pcap-${rackId}-${Math.round(this.simTime)}`,
